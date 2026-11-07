@@ -96,7 +96,7 @@ function readInput() {
 }
 
 // ---------- 畫面切換 ----------
-const SCREENS = ['op', 'loading', 'title', 'select', 'hud', 'cards', 'talk', 'pause', 'result', 'wait', 'tip', 'howto', 'ending'];
+const SCREENS = ['op', 'loading', 'title', 'select', 'hud', 'cards', 'talk', 'pause', 'result', 'wait', 'tip', 'ending'];
 function show(...ids) { for (const s of SCREENS) $(s).classList.toggle('hide', !ids.includes(s)); }
 
 function goTitle() {
@@ -557,17 +557,10 @@ function frame(now) {
 const toUi = (j) => ({ bx: j.bx, by: j.by, x: j.bx + Math.max(-54, Math.min(54, j.x - j.bx)), y: j.by + Math.max(-54, Math.min(54, j.y - j.by)) });
 
 // ---------- 開機 ----------
-// ---------- 玩法說明（第一次按「開始」會先出現一次）----------
-let howNext = null;
-const HOW_KEY = 'liuhe-weiya-how';
-function showHow(next) { howNext = next || null; mode = 'how'; show('howto'); }
-$('bHow').onclick = () => { SND.play('tap'); showHow(null); };
-$('howOk').onclick = () => { SND.play('tap'); try { localStorage.setItem(HOW_KEY, '1'); } catch (e) {} const n = howNext; howNext = null; if (n) n(); else goTitle(); };
 $('bStart').onclick = () => {
   SND.play('tap');
   const go = () => { const n = D.LEVELS.findIndex((_, i) => bestOf()[i] == null); startLevel(n < 0 ? 0 : n); };
-  let seen = '1'; try { seen = localStorage.getItem(HOW_KEY); } catch (e) {}
-  if (!seen) showHow(go); else go();
+  go();
 };
 $('bSelect').onclick = () => { SND.play('tap'); goSelect(); };
 $('bContinue').onclick = () => { SND.play('tap'); continueRun(); };
