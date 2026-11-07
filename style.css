@@ -176,8 +176,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 /* ---------- 載入 ---------- */
 #loading { height: var(--vh, 1280px); display: grid; place-items: center; background: var(--night); }
-.ld { width: 460px; text-align: center; }
-.ld b { display: block; font-size: 68px; letter-spacing: .12em; color: var(--pumpkin); text-shadow: 0 0 10px rgba(240, 138, 36, .5); }
+.ld { width: 600px; max-width: 94%; text-align: center; }
+.ld b { display: block; white-space: nowrap; font-size: 64px; letter-spacing: .06em; color: var(--pumpkin); text-shadow: 0 0 10px rgba(240, 138, 36, .5); }
 .ld i { display: block; height: 22px; margin: 30px 0 18px; background: var(--wood); border-bottom: 5px solid var(--wood-d); padding: 4px; }
 .ld em { display: block; height: 100%; width: 0; background: var(--chalk); transition: width .2s; }
 .ld span { font-size: 28px; color: var(--chalk); opacity: .85; }
