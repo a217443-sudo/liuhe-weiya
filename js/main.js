@@ -428,7 +428,7 @@ function result(win) {
   $('rLine').textContent = win ? (last ? '尾牙開席囉！全部區域都走完了。' : '老闆評語：小六今天很努力，快可以吃尾牙了（還不行）。') : got < 3 ? '再來一次！先挑能打一整圈的武器會比較好過。' : '東西都拿到了，差一點！撤離時記得一直走位。';
   $('rNext').textContent = win ? (last ? '再玩一次' : '下一關') : '再來一次';
   $('rNext').onclick = () => { SND.play('tap'); startLevel(win ? (last ? 0 : li + 1) : li); };
-  $('rMenu').onclick = () => { SND.play('tap'); goSelect(); };
+  $('rMenu').onclick = () => { SND.play('tap'); goTitle(); };
   SND.play(win ? 'clear' : 'dead');
 }
 
@@ -562,7 +562,6 @@ $('bStart').onclick = () => {
   const go = () => { const n = D.LEVELS.findIndex((_, i) => bestOf()[i] == null); startLevel(n < 0 ? 0 : n); };
   go();
 };
-$('bSelect').onclick = () => { SND.play('tap'); goSelect(); };
 $('bContinue').onclick = () => { SND.play('tap'); continueRun(); };
 $('bOP').onclick = () => startOP();
 $('bEnter').onclick = () => { SND.unlock(); fullscreen(); startOP(); };
