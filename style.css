@@ -256,3 +256,11 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 #endPanel .row{display:flex;gap:12px;justify-content:center}
 
 #credit { position: fixed; right: 8px; bottom: calc(env(safe-area-inset-bottom, 0px) + 6px); z-index: 99999; font-size: 12px; line-height: 1.2; color: rgba(255, 255, 255, .78); background: rgba(0, 0, 0, .4); padding: 3px 8px; border-radius: 10px; text-decoration: none; }
+.card.lock { filter: grayscale(1) brightness(.8); opacity: .6; }
+.xp b { min-width: 64px; white-space: nowrap; }
+
+#cards .row.four { gap: 8px; }
+#cards .row.four .card { padding: 16px 6px 10px; }
+#cards .row.four .card b { font-size: 27px; }
+#cards .row.four .card p { font-size: 20px; line-height: 1.25; }
+#cards .row.four .card .ic { width: 110px !important; height: 110px !important; }

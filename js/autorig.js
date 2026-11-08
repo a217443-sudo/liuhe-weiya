@@ -56,6 +56,8 @@ export function rigGeometry(geoIn, J = JOINTS_WORKER, opts = {}) {
       if (k < 4) f *= 1 - THREE.MathUtils.smoothstep(segDist(p, segs[k][0], segs[k][1]), rad[k] * 1.8, rad[k] * 3);   // 離手臂太遠的衣服側邊不跟著手臂（舉手時不會拉出黑色破面）
       ws[k] = ws[k] * f + ws[k] * 0.0005;
     }
+    // 工人：手套掛在大腿旁邊，會有一部分權重被腿／身體分走，手一舉起來就被拉成白色扇形。離開身體夠遠的頂點不給腿和身體權重
+    if (opts.armClean && p.y < (opts.armClean[2] ?? 9)) { const m = THREE.MathUtils.smoothstep(Math.abs(p.x), opts.armClean[0], opts.armClean[1]); for (const k of [0, 4, 5, 6, 7]) ws[k] *= 1 - 0.985 * m; }
     // 腿只管髖以下、頭只管脖子以上，避免身體被帶著晃
     const t = p.y;
     if (t > J.hips[1]) { for (const k of [4, 5, 6, 7]) ws[k] *= 0.02; }

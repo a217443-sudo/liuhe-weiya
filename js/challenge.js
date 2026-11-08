@@ -440,37 +440,51 @@ const GAMES = [
       raf = requestAnimationFrame(frame);
       return stop;
     } },
-  { title: '老闆開會接公文', sfx: 'doc', bgm: 'title', bg: 'bg-meeting', ch: 'c-boss', rule: (hard) => `老闆在開會，公文一份一份丟過來！左右拖曳（或鍵盤 ← →）移動「公文籃」去接住公文，接 ${hard ? 18 : 15} 份過關。別接到咖啡，漏接或接到咖啡累計 5 次就失敗。`, goal: 15,
+  { title: '老闆開會接公文', sfx: 'doc', bgm: 'title', bg: 'bg-meeting', ch: 'c-boss', rule: (hard) => `老闆在開會，公文一份一份丟過來！左右拖曳（或鍵盤 ← →）移動「公文籃」去接住公文，接 ${hard ? 18 : 15} 份過關。要接「公文、金色急件（算 2 份）、印章」，別接到咖啡、拿鐵、熱茶、泡麵和訂書機！漏接公文或接到雜物累計 ${hard ? 5 : 6} 次就失敗。`, goal: 15,
     run(area, hud, end, hard) {
       const NEED = hard ? 18 : 15; let got = 0, miss = 0, stopped = false, last = performance.now(), raf = 0, spawnT = 0.4, bx = 0.5;
       area.innerHTML = '' + IMG('c-boss', 'position:absolute;left:50%;top:0;height:96px;transform:translateX(-50%)') + '<div id="say" class="lyric" style="position:absolute;left:0;right:0;top:16%;min-height:30px;font-size:20px"></div>' + IMG('s-basket', 'position:absolute;bottom:3%;width:96px;touch-action:none').replace('<img ', '<img id="basket" ') + '';
-      const basket = area.querySelector('#basket'), say = area.querySelector('#say'); const items = [];
+      const basket = area.querySelector('#basket'), say = area.querySelector('#say'); const items = []; const MAXMISS = hard ? 5 : 6, waveT0 = 7;
+      let waveT = waveT0;
+      const BAD = [['s-coffee', 14, '咖啡！', '咖啡灑到公文了！', 38], ['s-cup', 8, '拿鐵！', '外帶杯也來亂！', 34], ['s-tea', 6, '熱茶！', '茶潑到簽呈了！', 38], ['s-noodle', 6, '泡麵湯！', '泡麵湯燙到老闆了！', 38], ['s-stapler', 5, '訂書機！', '訂書機砸到籃子！', 44]];
+      const GOOD = [['s-doc', 54, 1, 38, 1], ['s-gold', 7, 2, 44, 1.25], ['s-stamp', 8, 1, 30, 1.5]];
+      const pick = (list, extra) => { let tot = 0; for (const t of list) tot += t[1] + (extra && t[0] === 's-coffee' ? extra : 0); let r = Math.random() * tot; for (const t of list) { r -= t[1] + (extra && t[0] === 's-coffee' ? extra : 0); if (r <= 0) return t; } return list[0]; };
+      const spawn = (bad, xFixed) => {
+        const t = bad ? pick(BAD, hard ? 8 : 0) : pick(GOOD);
+        const w = t[bad ? 4 : 3], H0 = area.clientHeight;
+        const e = el('div', IMG(t[0], 'width:100%'), ''); e.style.cssText = `position:absolute;top:22%;width:${w}px;line-height:0`; const x = xFixed ?? rnd(0.08, 0.92); e.style.left = `calc(${x * 100}% - ${w / 2}px)`; area.appendChild(e);
+        items.push({ e, x, y: H0 * 0.22, bad, tp: t, val: bad ? 0 : t[2], v: ((hard ? 230 : 190) + got * 6) * (bad ? 1 : t[4]) });
+      };
       const SAY = ['這份急件！', '馬上要簽！', '這份也要！', '還有一份！', '快接快接！', '老闆說幾句話就好…'];
       const place = () => { basket.style.left = `calc(${bx * 100}% - 48px)`; }; place();
       const move = (e) => { const r = area.getBoundingClientRect(); bx = Math.min(0.94, Math.max(0.06, (e.clientX - r.left) / r.width)); place(); };
       area.addEventListener('pointermove', move); area.addEventListener('pointerdown', move);
       const onKey = (e) => { if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') { e.preventDefault(); bx = Math.max(0.06, bx - 0.07); place(); } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { e.preventDefault(); bx = Math.min(0.94, bx + 0.07); place(); } };
       window.addEventListener('keydown', onKey);
-      const upd = () => { hud.innerHTML = `<span>接到 ${got}/${NEED}</span><span>失誤 ${miss}/5</span>`; }; upd();
+      const upd = () => { hud.innerHTML = `<span>接到 ${got}/${NEED}</span><span>失誤 ${miss}/${MAXMISS}</span>`; }; upd();
       const stop = () => { stopped = true; cancelAnimationFrame(raf); area.removeEventListener('pointermove', move); area.removeEventListener('pointerdown', move); window.removeEventListener('keydown', onKey); };
       const frame = (now) => {
         if (stopped) return; const dt = Math.min(0.1, (now - last) / 1000); last = now; const H = area.clientHeight, W = area.clientWidth;
         spawnT -= dt;
+        waveT -= dt;
+        if (waveT <= 0) {   // 雜物雨：同時掉下一排咖啡、茶、泡麵（要左右閃）
+          waveT = hard ? 7 : 9; const n = hard ? 5 : 4; for (let i = 0; i < n; i++) spawn(true, 0.1 + (0.8 * i) / (n - 1) + (Math.random() - 0.5) * 0.06);
+          say.textContent = '會議室的茶水間打翻了！'; floatText(area, area.clientWidth / 2, area.clientHeight * 0.3, '雜物雨！', '#ffb74d');
+        }
         if (spawnT <= 0) {
-          spawnT = Math.max(0.42, (hard ? 0.8 : 0.95) - got * 0.025); const bad = Math.random() < (hard ? 0.28 : 0.2);
-          const e = el('div', IMG(bad ? 's-coffee' : 's-doc', 'width:100%'), ''); e.style.cssText = 'position:absolute;top:22%;width:38px;line-height:0'; const x = rnd(0.08, 0.92); e.style.left = `calc(${x * 100}% - 17px)`; area.appendChild(e);
-          items.push({ e, x, y: H * 0.22, bad, v: (hard ? 230 : 190) + got * 6 }); say.textContent = SAY[Math.floor(Math.random() * SAY.length)];
+          spawnT = Math.max(0.34, (hard ? 0.7 : 0.82) - got * 0.02); const bad = Math.random() < (hard ? 0.42 : 0.36);
+          spawn(bad); say.textContent = SAY[Math.floor(Math.random() * SAY.length)];
         }
         for (let i = items.length - 1; i >= 0; i--) {
           const it = items[i]; it.y += it.v * dt; it.e.style.top = it.y + 'px';
           const by = H * 0.97 - 46;
           if (it.y >= by - 24 && it.y <= by + 24 && Math.abs(it.x - bx) < (48 + 14) / W) {
             items.splice(i, 1); it.e.remove();
-            if (it.bad) { miss++; SND().play('dead'); fxSplash(area, it.x * W, by); shake(area); floatText(area, it.x * W, by - 24, '咖啡！', '#ff8a80'); say.textContent = '咖啡灑到公文了！'; } else { got++; SND().play('gem'); fxPaper(area, it.x * W, by); floatText(area, it.x * W, by - 24, '+1', '#fff'); }
+            if (it.bad) { miss++; SND().play('dead'); fxSplash(area, it.x * W, by); shake(area); floatText(area, it.x * W, by - 24, it.tp[2], '#ff8a80'); say.textContent = it.tp[3]; } else { got += it.val; SND().play('gem'); fxPaper(area, it.x * W, by); floatText(area, it.x * W, by - 24, '+' + it.val, it.val > 1 ? '#ffd54f' : '#fff'); }
             upd();
           } else if (it.y > H) { items.splice(i, 1); it.e.remove(); if (!it.bad) { miss++; SND().play('tap'); upd(); } }
         }
-        if (miss >= 5) { stop(); return end(false, '公文漏太多，老闆在冒煙…'); }
+        if (miss >= MAXMISS) { stop(); return end(false, '公文漏太多、雜物又接太多，老闆在冒煙…'); }
         if (got >= NEED) { stop(); return end(true, `接了 ${got} 份公文，一份都沒皺！`); }
         raf = requestAnimationFrame(frame);
       };

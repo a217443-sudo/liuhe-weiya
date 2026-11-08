@@ -7,7 +7,8 @@
   const PLAYER = { hp: 100, spd: 210, climb: 180, r: 26, h: 110, magnet: 200, pick: 60, search: 2 };
 
   // 升級經驗：第 n 級升到 n+1 要幾顆糖
-  const needXp = (lv) => Math.round(3 + lv * 2.2 + lv * lv * 0.08);
+  // 升級所需經驗：比原本多很多，後面幾級更陡（怪多的後面關卡才不會一直升級）
+  const needXp = (lv) => Math.round(4 + lv * 3.2 + lv * lv * 0.28);
 
   // 怪物：r 半徑、spd 每秒 px、dmg 碰一下扣多少、xp 掉幾顆糖、fly 會飛（穿樓板）
   const MONS = {
@@ -18,7 +19,12 @@
     // 工廠關卡專用（前兩關）：搞笑的 NG 煞車盤、黑暗的 NG 輪圈（圖片 art/f-m-ngdisc、f-m-ngwheel）
     ngdisc:  { name: 'NG 不良品煞車盤', img: 'm-ngdisc', hp: 28, spd: 125, r: 24, dmg: 5, xp: 1 },
     ngwheel: { name: 'NG 不良品輪圈', img: 'm-ngwheel', hp: 85, spd: 92, r: 27, dmg: 9, xp: 3 },
-    boss:    { name: '大龍蝦王', img: 'm-boss', hp: 16000, spd: 42, r: 74, dmg: 20, xp: 60, boss: true },
+    screw:   { name: '螺絲怪', img: 'm-screw', hp: 36, spd: 118, r: 22, dmg: 5, xp: 1 },   // 第 1 關 Boss 半血時叫出來的小弟（設備相關）
+    b1:      { name: '機械手臂王', img: 'm-b1', hp: 3500, spd: 160, r: 70, dmg: 24, xp: 30, boss: true, ai: 'arm' },   // 第 1 關：失控的機械手臂（重拳砸地、半血叫毛邊怪）
+    b2:      { name: 'NG 輪圈怪', img: 'm-b2', hp: 6000, spd: 170, r: 66, dmg: 26, xp: 36, boss: true, ai: 'roll' },   // 第 2 關：滾動衝撞，停下喘氣時最好打
+    b3:      { name: '廚房大總管', img: 'm-b3', hp: 9000, spd: 150, r: 76, dmg: 30, xp: 44, boss: true, ai: 'pot' },   // 第 3 關：丟米糕砲彈、鍋蓋掀開才好打
+    b4:      { name: '銘謝惠顧王', img: 'm-b4', hp: 12500, spd: 140, r: 78, dmg: 32, xp: 52, boss: true, ai: 'wheel' },   // 第 4 關：轉盤停在哪格決定怎麼打
+    boss:    { name: '大龍蝦王', img: 'm-boss', hp: 16000, spd: 185, r: 74, dmg: 38, xp: 60, boss: true, ai: 'lobster' },   // 第 5 關：大螯夾擊、吐泡泡定身、半血叫小龍蝦、殘血狂暴
     ghostking: { name: '石斑魚王', img: 'm-ghostboss', hp: 4500, spd: 50, r: 62, dmg: 14, xp: 40, boss: true, fly: true, summon: 'ghost' },
   };
 
@@ -112,6 +118,40 @@
       SKILLS[k].name = f ? f[0] : BASE[k].name; SKILLS[k].desc = f && f[1] ? f[1] : BASE[k].desc;
     }
   }
+
+  // ---------- 職業晉升：Lv5、Lv10、Lv15 各一次（共三次）----------
+  // 規則：第一次晉升選職業；之後可繼續晉升同職業（升一階），或轉職（新職業的階級 = 目前階級 - 1，最低 1 階，所以要降一級）
+  // ready:false 的職業還沒開放（卡片會灰掉）
+  const PROMO_LV = [5, 10, 15];
+  const JOBS = {
+    op: { name: '機台操作員', short: '現場', ready: true, icon: 5, outfit: ['#', '#', '#'],
+      titles: ['作業員', '機台技師', '機台組長', '機台課長'],
+      desc: ['旋轉鋸盤繞身體轉，碰到的怪被鋸', '鋸盤變 3 片、再加「衝壓機」：定時重壓地面震退周圍', '鋸盤 4 片更大更痛、衝壓更快更大、再加「油壓錘」：全場大震波'],
+      // 每一階的數值
+      lv: [null,
+        { saw: { n: 2, r: 95, dmg: 16, spd: 3.4 } },
+        { saw: { n: 3, r: 115, dmg: 22, spd: 3.6 }, stamp: { cd: 3.4, r: 150, dmg: 34, stun: .5 } },
+        { saw: { n: 4, r: 135, dmg: 30, spd: 4 }, stamp: { cd: 2.6, r: 195, dmg: 50, stun: .7 }, hammer: { cd: 7.5, r: 620, dmg: 130, stun: 1.1 } }] },
+    mt: { name: '維修員', short: '維修', ready: true, icon: 3, titles: ['作業員', '維修技師', '維修組長', '維修課長'],
+      desc: ['放「夾具陷阱」讓怪踩到受傷變慢，自己還會慢慢回血', '陷阱放 2 個、再加「自動砲台」幫你開火，回血更快', '陷阱 3 個更痛、2 座砲台會連線互相補血、回血最快'],
+      lv: [null,
+        { trap: { cd: 3.6, n: 1, dmg: 26, r: 70, dur: 9 }, regen: { every: 4, n: 2 } },
+        { trap: { cd: 3.0, n: 2, dmg: 34, r: 80, dur: 10 }, turret: { n: 1, cd: 0.55, dmg: 16, range: 460, dur: 14, spawn: 9 }, regen: { every: 3.5, n: 3 } },
+        { trap: { cd: 2.4, n: 3, dmg: 46, r: 95, dur: 11 }, turret: { n: 2, cd: 0.4, dmg: 22, range: 520, dur: 16, spawn: 7, link: true }, regen: { every: 3, n: 5 } }] },
+    hr: { name: '人資', short: '人資', ready: true, icon: 12, titles: ['作業員', '人資助理', '人資專員', '人資主管'],
+      desc: ['「公告張貼」讓周圍的怪定住 2 秒、「加班單」讓怪被加班變慢又慢慢受傷', '再加「考績評比」標記怪、讓牠受到的傷害變多，還有「面試」連續逼問怪', '再加「調薪」全員攻擊提升一段時間、「請假單」把一群怪請走'],
+      lv: [null,
+        { notice: { cd: 5.5, r: 220, stun: 2, dmg: 10 }, overtime: { r: 170, dps: 6 } },
+        { notice: { cd: 4.5, r: 250, stun: 2.2, dmg: 14 }, overtime: { r: 210, dps: 10 }, review: { cd: 4, n: 1, mul: 1.6, dur: 3.5 }, interview: { cd: 3.2, dps: 28, dur: 3 } },
+        { notice: { cd: 3.6, r: 280, stun: 2.4, dmg: 20 }, overtime: { r: 250, dps: 16 }, review: { cd: 3.2, n: 3, mul: 1.8, dur: 4 }, interview: { cd: 2.6, dps: 40, dur: 3 }, raise: { cd: 14, dur: 6, mul: 1.4 }, leave: { cd: 12, r: 460, n: 8, stun: 3.5 } }] },
+  };
+  // ---------- 夥伴：第一、二次晉升後各選一位，最多兩位一起跟著主角（三位候選，各管一種事）----------
+  const PARTNER_MAX = 1;   // 一次只能帶一位夥伴；選別位會把現在這位換掉
+  const PARTNERS = {
+    zhang: { name: '老闆', role: '變身超人', desc: '定時變身「打怪超人」，衝進怪群撞飛怪物（職階越高越痛）' },
+    tu: { name: '總務阿兔', role: '變身護士', desc: '定時變身「護士兔」，用打針幫你持續回血' },
+  };
+
   const MAXLV = 5;
   // 困難版：怪物量變多（生怪速度、同時上限、大群人數），升級要的金元寶變多
   // 困難版：怪物約一般版 4 倍多（出怪、大群都 ×3），但每隻血只有 0.4 倍；升級要的金元寶 ×2；同時在場有上限（cap，大群也算）
@@ -146,27 +186,27 @@
       rooms: ['class hall class music', 'class class hall library', 'hall gym hall class'],
       ladders: [[0, 0.5], [0, 3.5], [1, 2.5]],
       items: [['doc', 2, 0.5], ['seal', 1, 3.6], ['blueprint', 2, 3.5]], chests: [[1, 1.5]],
-      start: [0, 1.5], exit: [0, 1.5], npc: 'tu',
+      start: [0, 1.5], exit: [0, 1.5], npc: 'tu', boss: { k: 'b1', at: 'chase' },
       waves: { rate: 1.0, grow: 1.0, cap: 120, mix: [['pumpkin', 10, 0], ['ngdisc', 4, 15], ['bat', 3, 45]], horde: 50, hordeN: 16 } },
     { name: '品管室與 CNC 區', sub: '拿到車鑰匙，準備開車去尾牙', story: 'l2', wait: 10, skin: 'f',
       rooms: ['nurse lab hall class', 'lab hall class nurse', 'class nurse lab hall', 'hall lab hall class'],
       ladders: [[0, 3.5], [1, 0.5], [1, 2.5], [2, 3.5]],
       items: [['caliper', 3, 0.5], ['key', 1, 3.5], ['toolbox', 2, 0.5]], chests: [[2, 2.5], [3, 3.5]],
-      start: [0, 0.5], exit: [0, 0.5], npc: 'tu',
+      start: [0, 0.5], exit: [0, 0.5], npc: 'tu', boss: { k: 'b2', at: 'chase' },
       waves: { rate: 1.6, grow: 1.6, cap: 170, mix: [['pumpkin', 10, 0], ['ngdisc', 4, 0], ['bat', 4, 20], ['ghost', 3, 40], ['ngwheel', 3, 30], ['mummy', 2, 70]], horde: 42, hordeN: 28 } },
     { name: '食材倉庫與包廂', sub: '米糕怪很耐打', story: 'l3', wait: 10,
       rooms: ['library music hall library class', 'music hall library class music', 'hall class music hall library', 'class library hall music hall'],
       ladders: [[0, 0.5], [0, 4.5], [1, 2.5], [2, 0.5], [2, 4.5]],
       items: [['cape', 3, 4.5], ['camera', 2, 2.5], ['radio', 1, 0.5]], chests: [[1, 3.5], [3, 1.5]],
-      start: [0, 2.5], exit: [0, 2.5], npc: 'zhang',
+      start: [0, 2.5], exit: [0, 2.5], npc: 'zhang', boss: { k: 'b3', at: 'chase' },
       waves: { rate: 2.3, grow: 2.2, cap: 190, mix: [['pumpkin', 10, 0], ['bat', 4, 0], ['ghost', 3, 30], ['mummy', 2, 60]], horde: 40, hordeN: 34 } },
     { name: '櫃台那一棟', sub: '怪越來越多', story: 'l4', wait: 10,
       rooms: ['office hall class lab library', 'class music hall library hall', 'hall lab class hall nurse', 'library hall nurse class music', 'hall class gym hall lab'],
       ladders: [[0, 0.5], [0, 4.5], [1, 2.5], [2, 0.5], [2, 4.5], [3, 2.5]],
       items: [['lolli', 1, 4.5], ['cookie', 3, 0.5], ['lights', 2, 2.5]], chests: [[1, 0.5], [3, 3.5], [4, 4.5]],
-      start: [0, 2.5], exit: [4, 0.5], npc: 'zhang',
+      start: [0, 2.5], exit: [4, 0.5], npc: 'zhang', boss: { k: 'b4', at: 'chase' },
       waves: { rate: 2.7, grow: 2.5, cap: 210, mix: [['pumpkin', 10, 0], ['bat', 5, 0], ['ghost', 4, 20], ['mummy', 3, 45]], horde: 38, hordeN: 40 } },
-    { name: '頂樓露台尾牙', sub: '大龍蝦王出現了', story: 'l5', wait: 10, boss: { k: 'boss', at: 'roof' },
+    { name: '頂樓露台尾牙', sub: '大龍蝦王出現了', story: 'l5', wait: 10, boss: { k: 'boss', at: 'chase' },
       rooms: ['roof roof roof roof roof', 'class hall music library hall', 'lab class hall office class', 'hall library class nurse music', 'gym hall lab hall class'],
       ladders: [[0, 2.5], [1, 0.5], [1, 4.5], [2, 2.5], [3, 0.5], [3, 4.5]],
       items: [['banner', 3, 2.5], ['ears', 2, 0.5], ['trophy', 1, 4.5]], chests: [[1, 2.5], [2, 4.5], [3, 1.5]],
@@ -177,23 +217,38 @@
   // 劇情：每關開場 intro、過關 outro；who: bian 小六、tu 總務阿兔、zhang 老闆
   const STORY = {
     l1: {
+      bossIn: [['b1', '警——報——PLC 異常……急停按鈕……失效……'], ['bian', '設備又故障了喔？'], ['b1', '保養標籤顯示，上次保養是……三年前。'], ['bian', '那是誰的責任？'], ['b1', '……滋……設備科說，是使用者操作不當。']],
+      bossOut: [['b1', '已重新開機……更新中 99%……99%……'], ['bian', '卡在 99% 的人，最懂你。'], ['tu', '報修單我幫你填好囉～設備科說，下週處理。'], ['bian', '又是下週！']],
       intro: [['tu', '小六～今天是六和尾牙！不過下班前，老闆在會議室還有事要交辦。'], ['bian', '我可以吃尾牙了嗎？'], ['tu', '還不行喔！先把公文夾、印章跟圖面捲送去會議室給我。'], ['tu', '每一關的任務都完成，才能去海豐餐廳吃尾牙～'], ['bian', '……好，送完就可以吃了吧？'], ['tu', '可是組裝區好像跑出好多毛邊怪，加油～']],
       outro: [['tu', '公文接得好！老闆開會就是要這種反應。'], ['bian', '那我可以吃尾牙了嗎？'], ['tu', '還不行喔，下一件事在品管室～']] },
     l2: {
+      bossIn: [['b2', '我是 NG 不良品。你敢說我不合格？'], ['bian', '我什麼都還沒說……'], ['b2', '我的公差是 0.01，你的人生公差是多少？'], ['bian', '我只想去吃尾牙！']],
+      bossOut: [['b2', '我不甘心……我只差 0.01 毫米而已……'], ['bian', '差 0.01 就是 NG。'], ['b2', '那……能不能申請特採？'], ['bian', '不准，我們不接受、不製造、不流出不良品！']],
       intro: [['tu', '品管室的卡尺、公司車鑰匙跟工具箱，拿過來之後，我們要開車去海豐餐廳！'], ['bian', '總務，這些不是妳自己拿比較快嗎？'], ['tu', '人家拿不動嘛～鐵塊怪很耐打，小心喔。'], ['tu', '對了！離開公司時下班要記得刷卡，不然會被記曠工喔～'], ['bian', '收到，刷完卡就出發！']],
       outro: [['tu', '車開得真快！我們到海豐餐廳了～'], ['bian', '我可以吃尾牙了嗎？'], ['tu', '快了快了，老闆已經在裡面等了。']] },
     l3: {
+      bossIn: [['b3', '誰在我的廚房偷看菜單？'], ['bian', '我只是來問，可以吃尾牙了嗎？'], ['b3', '還沒有。先把我的米糕都吃完，吃得完就算你贏。'], ['bian', '那一鍋是給一百人吃的耶！']],
+      bossOut: [['b3', '……菜，涼了。'], ['bian', '……我可以吃了嗎？'], ['zhang', '先別，老闆再說幾句話就好……']],
       intro: [['zhang', '歡迎來到海豐餐廳！各位同仁，老闆說幾句話就好。'], ['bian', '我可以吃尾牙了嗎？'], ['zhang', '先把摸彩獎品袋、大合照相機、音響搬進來，老闆年紀大了搬不動。'], ['bian', '老闆，您剛剛自己走進來的。'], ['zhang', '……那個，米糕怪很耐打，小心喔。']],
       outro: [['zhang', '搶紅包手速不錯！'], ['bian', '老闆，我可以吃尾牙了嗎？'], ['zhang', '還沒，老闆再說幾句話就好……']] },
     l4: {
+      bossIn: [['b4', '歡迎參加尾牙大抽獎！特獎，一台汽車！'], ['bian', '真的嗎？'], ['b4', '中獎機率……百萬分之一。'], ['bian', '那我現在抽到的是什麼？'], ['b4', '恭喜您，抽中——銘謝惠顧！']],
+      bossOut: [['b4', '轉盤……停了……'], ['bian', '所以特獎呢？'], ['b4', '特獎……要先通過簽核。核准後，下一年度發放。'], ['bian', '抽獎還要簽核？！']],
       intro: [['zhang', '尾牙的紅包跟年糕，老闆請餐廳收在櫃台那一棟。'], ['zhang', '還有布置用的燈串，在三樓。拿齊了就上五樓櫃台找老闆，要跟同事來場猜拳大賽！'], ['bian', '為什麼紅包收在櫃台？'], ['zhang', '……老闆說幾句話就好，快去快回。']],
       outro: [['zhang', '猜拳贏得漂亮，同事都服氣了！老闆也笑開懷！'], ['bian', '那我可以吃尾牙了嗎？'], ['tu', '最後一項挑戰是逐桌敬酒，每一桌都要敬到喔～']] },
     l5: {
+      bossIn: [['b5', '吾乃尾牙之王，今晚無人能吃到我。'], ['bian', '你戴著皇冠，是要被吃的那隻吧？'], ['b5', '……大膽！你可知道我一頓飯，要熬幾個鐘頭？'], ['bian', '我只想吃尾牙。']],
+      bossOut: [['b5', '吾……今晚，只能當一道菜了。'], ['zhang', '各位同仁，老闆說幾句話就好——'], ['bian', '老闆，我可以吃尾牙了嗎？']],
       intro: [['tu', '尾牙布條、財神帽，還有特獎大紅包，拿上來就能開席了！'], ['zhang', '露台上好像有隻很大的龍蝦，老闆覺得不太對勁……'], ['bian', '那隻龍蝦戴著皇冠。'], ['tu', '小六加油！打倒大龍蝦王，我們在露台等你～']],
       outro: [['tu', '每一桌都敬完了，還站得穩！所有挑戰全部通過，尾牙正式開席～'], ['zhang', '各位同仁，老闆說幾句話就好——'], ['bian', '老闆，我可以吃尾牙了嗎？'], ['zhang', '開動！']] },
   };
 
-  const NAMES = { bian: '小六', tu: '總務阿兔', zhang: '老闆' };
+  // 晉升時換夥伴：被換掉的夥伴留下的話
+  const DISCARD = {
+    tu: [['tu', '你要把我換掉？我才是幫你填報修單、申請加班費的人欸！'], ['bian', '報修單到現在都沒有下文啊……'], ['tu', '那是設備科的問題！算了，我回總務室，順便把你的下班打卡單冰在抽屜。'], ['bian', '等等，打卡單不能冰！']],
+    zhang: [['zhang', '什麼？換掉我？老闆說幾句話就好——'], ['bian', '好，請說。'], ['zhang', '……我忘記要說什麼了。'], ['bian', '沒關係，老闆辛苦了，尾牙見。'], ['zhang', '對了，那個尾牙影片，做好了嗎？']],
+  };
+  const NAMES = { bian: '小六', tu: '總務阿兔', zhang: '老闆', b1: '機械手臂王', b2: 'NG 輪圈怪', b3: '廚房大總管', b4: '銘謝惠顧王', b5: '大龍蝦王' };
 
-  G.DATA = { applySkin, get skin() { return DATA_SKIN.skin; }, CHEST_ICON_F: 206, ROOM, PLAYER, needXp, MONS, SKILLS, MAXLV, HARD, EASY, MAXW, RARE, HERO_LINES, ITEMS, CHEST_ICON, LEVELS, STORY, NAMES };
+  G.DATA = { applySkin, get skin() { return DATA_SKIN.skin; }, CHEST_ICON_F: 206, ROOM, PLAYER, needXp, MONS, SKILLS, MAXLV, PROMO_LV, JOBS, PARTNERS, PARTNER_MAX, DISCARD, HARD, EASY, MAXW, RARE, HERO_LINES, ITEMS, CHEST_ICON, LEVELS, STORY, NAMES };
 })(typeof window !== 'undefined' ? window : globalThis);

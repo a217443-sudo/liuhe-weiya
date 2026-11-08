@@ -1,5 +1,5 @@
 // 2D 畫面：夜空、校舍剖面（教室、樓板、梯子）、怪物群、武器特效、傷害數字、指路箭頭；小編由 hero.js 的 3D 貼上來
-import * as HERO from './hero.js?v=67';
+import * as HERO from './hero.js?v=85';
 
 const CORE = window.CORE, D = window.DATA;
 const { W, H, T } = D.ROOM;
@@ -10,7 +10,7 @@ let shake = 0, flashA = 0, redA = 0;
 
 export function loadImages(tick) {
   const names = ['sky', 'items', 'items2', 'skills', 'skills2', 'skillsf', 'skills2f', 'm-pumpkin', 'm-ghost', 'm-bat', 'm-mummy', 'm-boss', 'm-ghostboss',
-    'f-m-pumpkin', 'f-m-ghost', 'f-m-bat', 'f-m-mummy', 'f-m-ngdisc', 'f-m-ngwheel',
+    'f-m-pumpkin', 'f-m-ghost', 'f-m-bat', 'f-m-mummy', 'f-m-ngdisc', 'f-m-ngwheel', 'm-b1', 'f-m-b1', 'm-b2', 'f-m-b2', 'm-b3', 'm-b4', 'm-screw', 'f-m-screw',
     ...['class', 'lab', 'library', 'nurse', 'music', 'gym', 'office', 'hall', 'roof'].map((n) => 'room-' + n),
     ...['class', 'lab', 'library', 'nurse', 'music', 'gym', 'hall'].map((n) => 'room-f-' + n)];
   return Promise.all(names.map((n) => new Promise((res) => {
@@ -18,7 +18,7 @@ export function loadImages(tick) {
     im.src = `art/${n}.webp?v=70`;
   }))).then(() => {
     // 怪物的白色、藍色、橘色剪影（被打閃白、被冰變藍、被燙變橘）
-    for (const k of ['m-pumpkin', 'm-ghost', 'm-bat', 'm-mummy', 'm-boss', 'm-ghostboss', 'f-m-pumpkin', 'f-m-ghost', 'f-m-bat', 'f-m-mummy', 'f-m-ngdisc', 'f-m-ngwheel']) {
+    for (const k of ['m-pumpkin', 'm-ghost', 'm-bat', 'm-mummy', 'm-boss', 'm-ghostboss', 'f-m-pumpkin', 'f-m-ghost', 'f-m-bat', 'f-m-mummy', 'f-m-ngdisc', 'f-m-ngwheel', 'm-b1', 'f-m-b1', 'm-b2', 'f-m-b2', 'm-b3', 'm-b4', 'm-screw', 'f-m-screw']) {
       const im = IMG[k]; if (!im) continue;
       for (const [suf, col] of [['w', '#fff'], ['b', '#7fd0ff'], ['o', '#ffb347']]) {
         const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
@@ -28,7 +28,7 @@ export function loadImages(tick) {
     }
   });
 }
-export const LOAD_STEPS = 36;
+export const LOAD_STEPS = 44;
 export const img = (n) => IMG[n];
 
 export function init(canvas) { cv = canvas; ctx = cv.getContext('2d'); resize(); }
@@ -51,7 +51,10 @@ export function events(S, evs) {
     } else if (e.k === 'die') burst(e.x, e.y, e.t, e.r);
     else if (e.k === 'hurt') { redA = 0.35; shake = Math.max(shake, 6); nums.push({ x: e.x, y: e.y - 40, n: -e.n, t: 0, hurt: true }); }
     else if (e.k === 'heal') nums.push({ x: e.x, y: e.y - 40, n: '+' + e.n, t: 0, heal: true });
+    else if (e.k === 'say') nums.push({ x: e.x, y: e.y, n: e.s, t: 0, say: true });
     else if (e.k === 'boom') shake = Math.max(shake, 7);
+    else if (e.k === 'stamp') shake = Math.max(shake, 8);
+    else if (e.k === 'hammer') { shake = Math.max(shake, 16); flashA = 0.3; }
     else if (e.k === 'flash') flashA = 0.22;
     else if (e.k === 'thunder') shake = Math.max(shake, 4);
     else if (e.k === 'bossDown') { shake = 18; for (let i = 0; i < 6; i++) burst(e.x + (Math.random() - 0.5) * 120, e.y + (Math.random() - 0.5) * 100, 'boss', 60); }
@@ -99,7 +102,7 @@ export function draw(S, o) {
   rg.addColorStop(0, 'rgba(6,8,22,0)'); rg.addColorStop(1, 'rgba(6,8,22,0.55)');
   ctx.fillStyle = rg; ctx.fillRect(0, 0, cssW, cssH);
   ctx.setTransform(k, 0, 0, k, dpr * (cssW / 2 - S.cam.x * scale + sx), dpr * (cssH / 2 - S.cam.y * scale + sy));
-  drawBeams(S); drawExtras(S, t); drawGlow(S, t); drawHelper(S, t, o);
+  drawBossZones(S, t); drawHRAura(S, t); drawBeams(S); drawExtras(S, t); drawGlow(S, t); drawJob(S, t); drawBossHz(S, t); drawHelper(S, t, o); drawNurse(S, t, o); drawHua(S, t, o);
   ctx.globalCompositeOperation = 'lighter';
   drawFx(S);
   ctx.globalCompositeOperation = 'source-over';
@@ -305,8 +308,33 @@ function drawMon(S, m, t, v) {
   if (m.cl) rot = -1.35 * m.face + Math.sin(t * 14 + m.ph) * 0.2;
   else if (m.d.fly) { bob = Math.sin(t * (m.k === 'bat' ? 14 : 3) + m.ph) * (m.k === 'bat' ? 4 : 7); sy = m.k === 'bat' ? 1 + Math.sin(t * 22 + m.ph) * 0.15 : 1; }
   else { rot = Math.sin(t * 9 * spd + m.ph) * 0.14 * spd; sy = 1 + Math.abs(Math.sin(t * 9 * spd + m.ph)) * 0.06; bob = -Math.abs(Math.sin(t * 9 * spd + m.ph)) * 5 * spd; }
-  if (m.d.boss) { rot *= 0.4; sy = 1 + Math.sin(t * 3) * 0.03; }
-  ctx.translate(0, bob); ctx.rotate(rot); ctx.scale(m.face, sy);
+  let sxB = 1, shx = 0;
+  if (m.d.boss) {
+    rot *= 0.4; sy = 1 + Math.sin(t * 3) * 0.03;
+    const a = m.ai;   // 攻擊動作：蓄力（拉高、抖）→ 出招（壓扁）
+    if (a) {
+      if (m.d.ai === 'arm') {
+        if (a.ph === 'wind') { const k = 1 - Math.max(0, a.t); sy = 1 + 0.14 * k; sxB = 1 - 0.05 * k; shx = Math.sin(t * 50) * 3 * k; }
+        else if (a.hit > 0) { const k = a.hit / 0.35; sy = 1 - 0.16 * k; sxB = 1 + 0.12 * k; }
+      } else if (m.d.ai === 'roll') {
+        if (a.ph === 'aim') { sxB = 0.9; sy = 1.06; shx = Math.sin(t * 60) * 4; }
+        else if (a.ph === 'dash') { rot = t * 18 * (a.dashV >= 0 ? 1 : -1); sy = 1; }
+        else if (a.ph === 'rest') { rot = Math.sin(t * 9) * 0.12; sy = 0.94 + Math.sin(t * 5) * 0.03; }
+      } else if (m.d.ai === 'lobster') {
+        if (a.ph === 'wind') { rot = -0.14 * m.face; sy = 1.1; shx = Math.sin(t * 40) * 3; }
+        else if (a.hit > 0) { const k = a.hit / 0.35; rot = 0.12 * m.face * k; sy = 1 - 0.14 * k; sxB = 1 + 0.12 * k; }
+        if (a.rage) shx += Math.sin(t * 30) * 2;
+      } else if (m.d.ai === 'pot') {
+        if (a.ph === 'open') { sy = 1 + Math.sin(t * 14) * 0.05; sxB = 1 - Math.sin(t * 14) * 0.04; }
+        if (a.hit > 0) { sy *= 1 - 0.1 * (a.hit / 0.4); }
+      } else if (m.d.ai === 'wheel') {
+        if (a.ph === 'idle') rot = Math.sin(t * 4) * 0.08 + Math.sin(t * 17) * 0.015;
+        else if (a.hit > 0) { sy = 1 + 0.1 * (a.hit / 0.5); shx = Math.sin(t * 50) * 3; }
+        else rot = Math.sin(t * 20) * 0.03;
+      }
+    }
+  }
+  ctx.translate(shx, bob); ctx.rotate(rot); ctx.scale(m.face * sxB, sy);
   if (im) {
     const w = sz, h = sz * im.height / im.width;
     ctx.drawImage(im, -w / 2, -h / 2 - (m.d.fly ? 0 : h * 0.08), w, h);
@@ -317,6 +345,7 @@ function drawMon(S, m, t, v) {
     if (tintC) { ctx.globalAlpha = ta; ctx.drawImage(IMG[ik + tintC] || IMG[m.d.img + tintC], -w / 2, -h / 2 - (m.d.fly ? 0 : h * 0.08), w, h); ctx.globalAlpha = 1; }
   } else { ctx.fillStyle = '#f08a24'; ctx.beginPath(); ctx.arc(0, 0, m.r, 0, 6.29); ctx.fill(); }
   ctx.restore();
+  if (m.marked > 0) { ctx.fillStyle = '#ff5a4a'; ctx.font = '900 30px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('★', m.x, m.y - m.r - 14 + Math.sin(t * 6) * 3); }   // 被考績標記
   // 耐打的怪頭上有血條
   if ((m.k === 'mummy' || m.k === 'ghost' || m.k === 'ngwheel') && m.hp < m.max) {
     ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(m.x - 24, m.y - m.r - 18, 48, 6);
@@ -384,6 +413,48 @@ function drawExtras(S, t) {
   for (const b of S.balls) { ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(b.x, b.y + 30, 14, 4, 0, 0, 6.29); ctx.fill(); icon('skills2', 0, b.x, b.y, 40, b.rot); }
 }
 // 校長（休息時跟在旁邊）／打怪超人（飛來飛去撞怪）
+// 小花（現場女工人夥伴）
+function drawHua(S, t, o) {
+  const h = S.hua; if (!h || o.story) return;
+  if (!h.climbing) ctx.fillStyle = 'rgba(0,0,0,.3)'; else ctx.fillStyle = 'rgba(0,0,0,0)'; ctx.beginPath(); ctx.ellipse(h.x, h.y - 2, 26, 6, 0, 0, 6.29); ctx.fill();
+  HERO.draw(ctx, 'bianF', h.x, h.y + 2, 118, {});
+  if (h.age < 2.4) bubble(h.x, h.y - 165, '我來幫忙！');
+}
+// 護士兔（總務夥伴）：平常是總務阿兔，變身後頭戴護士帽、在主角身邊持續回血
+// 針筒：從護士兔飛向主角（拋物線），針頭朝前
+function drawSyringes(S) {
+  const px = S.p.x, py = CORE.pc(S);
+  for (const sy of S.syringes) {
+    const k = Math.min(1, sy.t / sy.dur), x = sy.x0 + (px - sy.x0) * k, y = sy.y0 + (py - sy.y0) * k - Math.sin(k * Math.PI) * 36;
+    const a = Math.atan2((py - sy.y0) - Math.PI * Math.cos(k * Math.PI) * 36, px - sy.x0);
+    ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+    ctx.fillStyle = 'rgba(200,255,220,.28)'; ctx.beginPath(); ctx.arc(0, 0, 20, 0, 6.29); ctx.fill();
+    ctx.fillStyle = '#eef7f2'; ctx.strokeStyle = '#263238'; ctx.lineWidth = 2.5;
+    ctx.fillRect(-16, -5, 22, 10); ctx.strokeRect(-16, -5, 22, 10);   // 針筒身
+    ctx.fillStyle = '#5ee08a'; ctx.fillRect(-12, -3, 14, 6);           // 藥水
+    ctx.fillStyle = '#90a4ae'; ctx.fillRect(-24, -2, 8, 4); ctx.fillRect(-26, -7, 3, 14);   // 推桿
+    ctx.fillStyle = '#cfd8dc'; ctx.fillRect(6, -2, 14, 4);              // 針頭
+    ctx.restore();
+  }
+}
+function drawNurse(S, t, o) {
+  drawSyringes(S);
+  const h = S.nurse; if (!h || o.story) return;
+  const nurse = h.ph === 'heal' || (h.ph === 'tf' && h.t > 0.3);
+  ctx.fillStyle = h.climbing ? 'rgba(0,0,0,0)' : 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(h.x, h.y - 2, 26, 6, 0, 0, 6.29); ctx.fill();
+  const white = h.ph === 'tf' ? Math.min(1, h.t * 2.5) : h.ph === 'back' ? 1 - h.t / 0.6 : 0;
+  HERO.draw(ctx, nurse ? 'tuN' : 'tu', h.x, h.y + 2, 112, { white: white > 0 ? white * 0.9 : 0 });
+  ctx.font = '700 22px "LXGW WenKai TC", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  if (h.ph === 'tf') { ctx.globalCompositeOperation = 'lighter'; glowDisk(h.x, h.y - 55, 130 * Math.min(1, h.t * 2.5), `rgba(255,230,240,${0.8 - h.t})`); ctx.globalCompositeOperation = 'source-over'; bubble(h.x, h.y - 170, '護士兔變身！'); }
+  else if (h.ph === 'heal' && h.t < 1.8) bubble(h.x, h.y - 170, '打針囉，不會痛～');
+  else if (h.ph === 'calm' && h.age < 2.4) bubble(h.x, h.y - 170, '我來幫忙～');
+  else if (h.ph === 'calm') {   // 頭上的變身倒數
+    const y = h.y - 150, f = 1 - h.left / NURSE_CALM;
+    ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.beginPath(); ctx.arc(h.x, y, 16, 0, 6.29); ctx.stroke();
+    ctx.strokeStyle = '#ff7aa8'; ctx.beginPath(); ctx.arc(h.x, y, 16, -1.57, -1.57 + 6.283 * Math.max(0, Math.min(1, f))); ctx.stroke();
+  }
+}
+const NURSE_CALM = 14;
 function drawHelper(S, t, o) {
   const h = S.helper; if (!h || o.story) return;
   const flying = h.ph === 'fight';
@@ -413,13 +484,119 @@ function drawHelper(S, t, o) {
   } else if (flying && h.left < 3) bubble(h.x, h.y - 170, '快沒電了…');
 }
 function bubble(x, y, s) {
-  const w = ctx.measureText(s).width + 26;
-  ctx.fillStyle = 'rgba(250,246,236,.95)'; ctx.strokeStyle = '#3a3530'; ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.rect(x - w / 2, y - 20, w, 40); ctx.moveTo(x - 8, y + 20); ctx.lineTo(x, y + 32); ctx.lineTo(x + 8, y + 20); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#3a3530'; ctx.fillText(s, x, y + 1);
+  // 固定字型、自動換行（每行最多 9 個字），框依字數撐大；原本沿用別處設的字型，長句會超出框
+  ctx.save();
+  ctx.font = '700 22px "LXGW WenKai TC", "Noto Sans TC", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const chars = [...s], lines = []; for (let i = 0; i < chars.length; i += 9) lines.push(chars.slice(i, i + 9).join(''));
+  const lh = 28, w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 28, h = lines.length * lh + 14, top = y + 20 - h;
+  ctx.fillStyle = 'rgba(250,246,236,.96)'; ctx.strokeStyle = '#3a3530'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.rect(x - w / 2, top, w, h); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x - 9, top + h - 1); ctx.lineTo(x, top + h + 12); ctx.lineTo(x + 9, top + h - 1); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = 'rgba(250,246,236,.96)'; ctx.fillRect(x - 8, top + h - 3, 16, 5);
+  ctx.fillStyle = '#3a3530'; lines.forEach((l, i) => ctx.fillText(l, x, top + 7 + lh * (i + 0.5)));
+  ctx.restore();
+}
+// Boss 留在地上的燙傷區、丟出來的米糕砲彈與抽獎球，以及 Boss 頭上的狀態字
+function drawBossZones(S, t) {
+  for (const z of S.zones) {
+    const a = Math.min(1, z.life * 0.8);
+    ctx.fillStyle = `rgba(255,120,30,${0.28 * a})`; ctx.beginPath(); ctx.ellipse(z.x, z.y, z.r, z.r * 0.3, 0, 0, 6.29); ctx.fill();
+    ctx.strokeStyle = `rgba(255,200,80,${0.6 * a})`; ctx.lineWidth = 3; ctx.stroke();
+    for (let i = 0; i < 3; i++) { const q = (t * 1.2 + i / 3) % 1; ctx.fillStyle = `rgba(255,230,160,${(1 - q) * 0.5 * a})`; ctx.beginPath(); ctx.arc(z.x + (i - 1) * z.r * 0.5, z.y - q * 34, 6 * (1 - q) + 2, 0, 6.29); ctx.fill(); }
+  }
+}
+function drawBossHz(S, t) {
+  for (const h of S.hz) {
+    if (h.k === 'blob') {
+      const k = Math.min(1, h.t / h.dur), x = h.x0 + (h.tx - h.x0) * k, y = h.y0 + (h.ty - h.y0) * k - Math.sin(k * Math.PI) * 220;
+      ctx.strokeStyle = `rgba(255,80,50,${0.4 + 0.5 * k})`; ctx.lineWidth = 4; ctx.beginPath(); ctx.ellipse(h.tx, h.ty, h.r, h.r * 0.3, 0, 0, 6.29); ctx.stroke();   // 落點預告
+      ctx.save(); ctx.translate(x, y); ctx.rotate(t * 6);
+      ctx.fillStyle = '#f4e8c8'; ctx.strokeStyle = '#4a3a22'; ctx.lineWidth = 3; ctx.fillRect(-16, -12, 32, 24); ctx.strokeRect(-16, -12, 32, 24);
+      ctx.fillStyle = '#7a8f3a'; ctx.fillRect(-10, -8, 6, 5); ctx.fillRect(2, 0, 7, 5); ctx.restore();
+    } else if (h.k === 'coin') {
+      const k = Math.min(1, h.t / h.dur), y = h.ty - 380 * (1 - k * k);
+      ctx.strokeStyle = `rgba(255,200,60,${0.35 + 0.5 * k})`; ctx.lineWidth = 4; ctx.beginPath(); ctx.ellipse(h.tx, h.ty, h.r, h.r * 0.3, 0, 0, 6.29); ctx.stroke();
+      ctx.save(); ctx.translate(h.tx, y); ctx.rotate(Math.sin(h.t * 12) * 0.5);
+      ctx.fillStyle = '#ffd54f'; ctx.strokeStyle = '#8d6e00'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, 18, 0, 6.29); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#8d6e00'; ctx.font = '900 20px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('$', 0, 1); ctx.restore();
+    } else if (h.k === 'bubble') {
+      ctx.save(); ctx.translate(h.x, h.y); const r = h.r + Math.sin(h.t * 10) * 2;
+      ctx.fillStyle = 'rgba(160,220,255,.35)'; ctx.strokeStyle = 'rgba(220,245,255,.95)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.29); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.ellipse(-r * 0.35, -r * 0.4, r * 0.25, r * 0.15, -0.5, 0, 6.29); ctx.fill(); ctx.restore();
+    } else if (h.k === 'ball') {
+      ctx.save(); ctx.translate(h.x, h.y);
+      ctx.fillStyle = ['#d32f2f', '#1e88e5', '#43a047', '#8e24aa', '#f9a825'][h.n % 5]; ctx.beginPath(); ctx.arc(0, 0, h.r, 0, 6.29); ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.stroke(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0, 0, h.r * 0.55, 0, 6.29); ctx.fill();
+      ctx.fillStyle = '#222'; ctx.font = '700 15px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(h.n), 0, 1); ctx.restore();
+    }
+  }
+  const b = S.boss;
+  if (b && !b.dead && b.ai) {
+    let txt = '', col = '#fff';
+    if (b.d.ai === 'roll' && b.ai.vuln) { txt = '喘氣中！猛攻！'; col = '#7dffc8'; }
+    else if (b.d.ai === 'pot') { txt = b.ai.lid ? '鍋蓋蓋著（很硬）' : '鍋蓋掀開！快打！'; col = b.ai.lid ? '#ffb4a8' : '#7dffc8'; }
+    else if (b.d.ai === 'wheel' && b.ai.slot) { txt = { miss: '銘謝惠顧！暈了', jackpot: '特獎！傷害加倍', packet: '紅包～回血了' }[b.ai.slot]; col = b.ai.slot === 'packet' ? '#ffb4a8' : '#ffe27a'; }
+    if (txt) {
+      ctx.font = '700 26px "LXGW WenKai TC", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.strokeText(txt, b.x, b.y - b.r - 28); ctx.fillStyle = col; ctx.fillText(txt, b.x, b.y - b.r - 28);
+    }
+  }
+}
+// 人資：加班單的紫色光圈、調薪時的金色光圈（怪頭上的標記星在 drawMon）
+function drawHRAura(S, t) {
+  const j = S.job; if (!j || j.id !== 'hr') return;
+  const v = D.JOBS.hr.lv[j.tier], cx = S.p.x, cy = CORE.pc(S);
+  if (v.overtime) {
+    const r = v.overtime.r;
+    ctx.strokeStyle = 'rgba(190,140,255,.45)'; ctx.lineWidth = 4; ctx.setLineDash([14, 12]); ctx.lineDashOffset = -t * 30; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 6.29); ctx.stroke(); ctx.setLineDash([]);
+    glowDisk(cx, cy, r, 'rgba(150,100,220,.07)');
+  }
+  if (S.raiseT > 0) { glowDisk(cx, cy, 110, `rgba(255,215,90,${0.25 + 0.1 * Math.sin(t * 8)})`); }
+}
+// 機台操作員的旋轉鋸盤（繞著身體轉）
+function drawJob(S, t) {
+  const j = S.job; if (j && j.id === 'mt') return drawMaint(S, t);
+  if (!j || j.id !== 'op' || j.tier < 1) return;
+  const v = D.JOBS.op.lv[j.tier].saw, cx = S.p.x, cy = CORE.pc(S);
+  for (let i = 0; i < v.n; i++) {
+    const a = S.p.sawA + i * Math.PI * 2 / v.n, x = cx + Math.cos(a) * v.r, y = cy + Math.sin(a) * v.r, R0 = 24 + j.tier * 2;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(S.p.sawA * 5);
+    ctx.fillStyle = 'rgba(255,200,80,.25)'; ctx.beginPath(); ctx.arc(0, 0, R0 + 9, 0, 6.29); ctx.fill();
+    ctx.fillStyle = '#b8c2c8'; ctx.beginPath();
+    for (let q = 0; q < 16; q++) { const aa = q * Math.PI / 8, r = q % 2 ? R0 - 6 : R0 + 6; ctx.lineTo(Math.cos(aa) * r, Math.sin(aa) * r); }
+    ctx.closePath(); ctx.fill(); ctx.strokeStyle = '#263238'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.fillStyle = '#546e7a'; ctx.beginPath(); ctx.arc(0, 0, R0 * 0.45, 0, 6.29); ctx.fill(); ctx.fillStyle = '#eceff1'; ctx.beginPath(); ctx.arc(0, 0, R0 * 0.16, 0, 6.29); ctx.fill();
+    ctx.restore();
+  }
+}
+// 維修員：夾具陷阱（地上的鐵夾）與自動砲台
+function drawMaint(S, t) {
+  for (const tp of S.traps) {
+    const a = Math.min(1, tp.life * 2), y = tp.y + 30;
+    ctx.globalAlpha = a;
+    ctx.fillStyle = 'rgba(255,196,40,.18)'; ctx.beginPath(); ctx.ellipse(tp.x, y, tp.r, tp.r * 0.32, 0, 0, 6.29); ctx.fill();
+    ctx.strokeStyle = '#263238'; ctx.lineWidth = 6; ctx.beginPath(); ctx.ellipse(tp.x, y, tp.r * 0.55, tp.r * 0.2, 0, 0, 6.29); ctx.stroke();
+    ctx.strokeStyle = '#cfd8dc'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.fillStyle = '#eceff1'; for (let i = 0; i < 8; i++) { const an = i * Math.PI / 4, x = tp.x + Math.cos(an) * tp.r * 0.55, yy = y + Math.sin(an) * tp.r * 0.2; ctx.beginPath(); ctx.moveTo(x - 4, yy + 3); ctx.lineTo(x, yy - 10); ctx.lineTo(x + 4, yy + 3); ctx.fill(); }
+    ctx.globalAlpha = 1;
+  }
+  for (const tu of S.turrets) {
+    const y = tu.y + 22, blink = tu.life < 2 && Math.floor(t * 8) % 2 ? 0.4 : 1;
+    ctx.globalAlpha = blink;
+    ctx.fillStyle = '#455a64'; ctx.fillRect(tu.x - 18, y - 12, 36, 14); ctx.strokeStyle = '#102027'; ctx.lineWidth = 3; ctx.strokeRect(tu.x - 18, y - 12, 36, 14);
+    ctx.save(); ctx.translate(tu.x, y - 22); ctx.rotate(tu.ang);
+    ctx.fillStyle = '#ffb300'; ctx.beginPath(); ctx.arc(0, 0, 13, 0, 6.29); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#37474f'; ctx.fillRect(4, -5, 28, 10); ctx.strokeRect(4, -5, 28, 10);
+    ctx.restore(); ctx.globalAlpha = 1;
+  }
 }
 function drawHpBar(S) {
   const p = S.p, x = p.x, y = p.y - D.PLAYER.h - 24;
+  if (p.slowT > 0) { ctx.strokeStyle = 'rgba(200,240,255,.9)'; ctx.fillStyle = 'rgba(160,220,255,.22)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x, p.y - 56, 62, 0, 6.29); ctx.fill(); ctx.stroke(); }   // 被泡泡黏住
+  if (S.job && S.job.id) {   // 職稱（頭上）
+    const JB = D.JOBS[S.job.id], txt = JB.titles[S.job.tier] + ' ' + '★'.repeat(S.job.tier);
+    ctx.font = '700 20px sans-serif'; ctx.textAlign = 'center'; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.strokeText(txt, x, y - 16); ctx.fillStyle = ['#ffd24a', '#ffd24a', '#fff', '#ffd24a'][S.job.tier]; ctx.fillText(txt, x, y - 16);
+  }
   ctx.fillStyle = 'rgba(10,10,10,.7)'; ctx.fillRect(x - 38, y, 76, 10);
   ctx.fillStyle = p.hp / p.max < 0.3 ? '#ff4b3a' : '#7ee04a'; ctx.fillRect(x - 36, y + 2, 72 * p.hp / p.max, 6);
   for (let i = 0; i < p.shield; i++) { ctx.fillStyle = '#ff8a6a'; ctx.fillRect(x - 36 + i * 14, y - 8, 10, 5); }
@@ -492,6 +669,24 @@ function drawFx(S) {
     } else if (f.k === 'boom') {   // 躲避球砸地：白色衝擊圈
       glowDisk(f.x, f.y, f.r * (0.6 + k * 0.5), `rgba(255,120,100,${a * 0.6})`);
       ctx.strokeStyle = `rgba(255,245,230,${a})`; ctx.lineWidth = 10 * a + 1; ctx.beginPath(); ctx.ellipse(f.x, f.y, f.r * (0.4 + k * 0.8), f.r * (0.25 + k * 0.45), 0, 0, 6.29); ctx.stroke();
+    } else if (f.k === 'stamp') {   // 衝壓機：橘色衝擊圈
+      glowDisk(f.x, f.y, f.r * (0.5 + k * 0.5), `rgba(255,150,40,${a * 0.5})`);
+      ctx.strokeStyle = `rgba(255,230,160,${a})`; ctx.lineWidth = 12 * a + 2; ctx.beginPath(); ctx.ellipse(f.x, f.y, f.r * (0.3 + k * 0.7), f.r * (0.18 + k * 0.4), 0, 0, 6.29); ctx.stroke();
+    } else if (f.k === 'hammer') {   // 油壓錘：全場大震波
+      glowDisk(f.x, f.y, f.r * (0.3 + k * 0.6), `rgba(255,90,40,${a * 0.45})`);
+      for (let j = 0; j < 3; j++) { const kk = Math.max(0, k - j * 0.12); ctx.strokeStyle = `rgba(255,235,190,${a * (1 - j * 0.28)})`; ctx.lineWidth = 16 * a + 2; ctx.beginPath(); ctx.ellipse(f.x, f.y, f.r * (0.1 + kk * 0.95), f.r * (0.06 + kk * 0.5), 0, 0, 6.29); ctx.stroke(); }
+    } else if (f.k === 'heal') {   // 護士兔回血：綠色擴散圈加小十字
+      ctx.strokeStyle = `rgba(120,255,160,${a * 0.9})`; ctx.lineWidth = 6 * a + 1; ctx.beginPath(); ctx.arc(f.x, f.y, f.r * (0.3 + 0.7 * k), 0, 6.29); ctx.stroke();
+      ctx.fillStyle = `rgba(150,255,180,${a})`; const cy2 = f.y - 30 * k; ctx.fillRect(f.x - 3, cy2 - 11, 6, 22); ctx.fillRect(f.x - 11, cy2 - 3, 22, 6);
+    } else if (f.k === 'notice') {   // 公告張貼／請假單：紫色擴散圈加飄出的紙
+      ctx.strokeStyle = `rgba(210,150,255,${a * 0.9})`; ctx.lineWidth = 8 * a + 2; ctx.beginPath(); ctx.arc(f.x, f.y, f.r * (0.2 + 0.8 * k), 0, 6.29); ctx.stroke();
+      glowDisk(f.x, f.y, f.r * 0.7 * (0.3 + 0.7 * k), `rgba(200,150,255,${a * 0.25})`);
+    } else if (f.k === 'dashWarn') {   // 輪圈怪衝撞預告：一條紅色箭頭往衝的方向
+      ctx.fillStyle = `rgba(255,70,40,${0.25 + 0.4 * k})`; const L = 520 * (0.4 + 0.6 * k);
+      ctx.beginPath(); ctx.moveTo(f.x, f.y - 40); ctx.lineTo(f.x + f.dir * L, f.y - 40); ctx.lineTo(f.x + f.dir * (L + 40), f.y); ctx.lineTo(f.x + f.dir * L, f.y + 40); ctx.lineTo(f.x, f.y + 40); ctx.fill();
+    } else if (f.k === 'slamWarn') {   // Boss 重拳預告：紅圈慢慢填滿
+      glowDisk(f.x, f.y, f.r * (0.2 + 0.8 * k), `rgba(255,50,30,${0.18 + 0.2 * k})`);
+      ctx.strokeStyle = `rgba(255,90,60,${0.5 + 0.5 * k})`; ctx.lineWidth = 6; ctx.beginPath(); ctx.ellipse(f.x, f.y, f.r, f.r * 0.32, 0, 0, 6.29); ctx.stroke();
     } else if (f.k === 'pop') {
       ctx.strokeStyle = `rgba(255,220,120,${a})`; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(f.x, f.y, f.r * (0.3 + k), 0, 6.29); ctx.stroke();
     }
@@ -514,14 +709,14 @@ function drawNums(dt) {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
   for (let i = nums.length - 1; i >= 0; i--) {
     const n = nums[i]; n.t += dt;
-    const dur = n.hurt || n.heal ? 0.9 : 0.6;
+    const dur = n.say ? 1.3 : n.hurt || n.heal ? 0.9 : 0.6;
     if (n.t >= dur) { nums.splice(i, 1); continue; }
     const k = n.t / dur, y = n.y - 50 * k - (n.hurt ? 10 : 0);
     const s = n.big ? 34 : n.hurt ? 34 : 24, pop = k < 0.15 ? 1 + (0.15 - k) * 3 : 1;
-    ctx.font = `900 ${Math.round(s * pop)}px "Arial Black", "Helvetica Neue", sans-serif`;
+    ctx.font = n.say ? '700 28px "LXGW WenKai TC", sans-serif' : `900 ${Math.round(s * pop)}px "Arial Black", "Helvetica Neue", sans-serif`;
     ctx.globalAlpha = k > 0.7 ? (1 - k) / 0.3 : 1;
     ctx.lineWidth = 6; ctx.strokeStyle = '#1a1208'; ctx.strokeText(n.n, n.x, y);
-    ctx.fillStyle = n.hurt ? '#ff5a4a' : n.heal ? '#8ef06a' : n.big ? '#ffcf3a' : '#fff6e8';
+    ctx.fillStyle = n.say ? '#f0d6ff' : n.hurt ? '#ff5a4a' : n.heal ? '#8ef06a' : n.big ? '#ffcf3a' : '#fff6e8';
     ctx.fillText(n.n, n.x, y);
     ctx.globalAlpha = 1;
   }

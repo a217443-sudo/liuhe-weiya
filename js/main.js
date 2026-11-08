@@ -1,7 +1,7 @@
 // 主程式：畫面切換、搖桿、遊戲迴圈、上方資訊、升級卡、劇情對話、存檔
-import * as HERO from './hero.js?v=67';
-import * as R from './render.js?v=22';
-import { runChallenge } from './challenge.js?v=120';
+import * as HERO from './hero.js?v=85';
+import * as R from './render.js?v=36';
+import { runChallenge } from './challenge.js?v=121';
 
 const CORE = window.CORE, D = window.DATA, SND = window.SND;
 // 建立一關：先依該關的場景（工廠／尾牙）換武器名稱與圖示
@@ -101,7 +101,7 @@ function show(...ids) { for (const s of SCREENS) $(s).classList.toggle('hide', !
 
 function goTitle() {
   mode = 'title'; story = true;
-  S = mk(2, { seed: 7, vw: view.w, vh: view.h });
+  S = mk(0, { seed: 7, vw: view.w, vh: view.h });   // 片頭從工廠（第 1 關場景）開始
   S.p.x = 1.5 * D.ROOM.W; S.camDy = view.h * 0.14; CORE.updCam(S, 1);
   show('title'); SND.music('song'); syncDiff(); syncGender();
   const run = loadRun(), bc = $('bContinue');
@@ -138,8 +138,7 @@ for (const id of ['diffT', 'diffS']) for (const b of $(id).querySelectorAll('but
   if (mode === 'select') goSelect();
 };
 // 角色（男生／女生）：標題畫面選，選了就記住
-function syncGender() { for (const b of $('genderT').querySelectorAll('button')) b.classList.toggle('on', b.dataset.g === (save.gender || 'm')); HERO.setPlayer(save.gender || 'm'); }
-for (const b of $('genderT').querySelectorAll('button')) b.onclick = () => { save.gender = b.dataset.g; persist(); SND.play('tap'); syncGender(); };
+function syncGender() { save.gender = 'm'; HERO.setPlayer('m'); }   // 只保留男工人當主角
 const SKF = () => D.skin === 'f';
 // 任務道具圖示（items 圖；200 以上是工廠道具 items2）
 const itemPos = (i) => i >= 200 ? `background-image:url(art/items2.webp?v=70);background-position:${((i - 200) % 4) * 33.333}% ${((i - 200) >> 2) * 33.333}%` : `background-position:${(i % 4) * 33.333}% ${(i >> 2) * 33.333}%`;
@@ -159,7 +158,7 @@ const OP = { hit: 1.58, slam: 3.24, sub: 3.9, end: 6.4 };
 let opT = 0, opCam = null, opStep = 0;
 function startOP() {
   mode = 'op'; story = true; opT = 0; opStep = 0;
-  S = mk(2, { seed: 7, vw: view.w, vh: view.h });
+  S = mk(0, { seed: 7, vw: view.w, vh: view.h });   // 片頭從工廠（第 1 關場景）開始
   S.p.x = 1.5 * D.ROOM.W; S.camDy = view.h * 0.14; CORE.updCam(S, 1);
   opCam = { x: S.cam.x, y: S.cam.y };
   $('op').className = 'screen';
@@ -189,9 +188,12 @@ $('opSkip').addEventListener('click', (e) => { e.stopPropagation(); endOP(); });
 $('op').addEventListener('pointerdown', (e) => { if (e.target.id !== 'opSkip' && opT > 0.4) endOP(); });
 
 // ---------- 開始一關 ----------
+let carry = null;   // 上一關結束時的職業、階級、夥伴、強化，帶到下一關
 function startLevel(i) {
   li = i; fullscreen(); clearRun();
   S = mk(i, { vw: view.w, vh: view.h, hard: !!save.hard });
+  if (i === 0) { carry = null; if (save.carry) { save.carry = null; persist(); } }   // 從第 1 關開始＝重新來過
+  else { if (!carry && save.carry) carry = save.carry; CORE.applyCarry(S, carry); }   // 第 2 關起：接續上一關的職業、夥伴、強化（重新整理頁面、從選關進來也一樣）
   $('modeTag').classList.toggle('hide', !S.hard);
   acc = 0; joy.id = null; joy.on = false;
   // 槽位
@@ -199,7 +201,29 @@ function startLevel(i) {
   SND.urgent(false);
   const st = D.STORY[S.L.story];
   story = true;
-  talk(st.intro, () => { story = false; begin(); });
+  talk(st.intro, () => { story = false; if (!S.job.id) showJobStart(); else begin(); });
+}
+// 一開始就選職業：三條路線，直接從第 1 階開始（之後 Lv5、10、15 還能晉升或轉職）
+function showJobStart() {
+  mode = 'pick'; joy.id = null; joy.on = false; cardsAt = performance.now();
+  show('hud', 'cards');
+  $('cardsTitle').innerHTML = '選擇你的職業！<small>一開始就有職階，之後升級還能晉升或轉職</small>';
+  const row = $('cardRow'); row.innerHTML = ''; row.classList.remove('four');
+  Object.keys(D.JOBS).filter((id) => D.JOBS[id].ready).forEach((id, i) => {
+    const J = D.JOBS[id], b = document.createElement('button'); b.className = 'card r' + (i === 0 ? 1 : i === 1 ? 2 : 3);
+    b.style.setProperty('--r', ((i - 1) * 1.2) + 'deg');
+    HERO.setOutfit(id, 1);
+    const pic = HERO.snapshot('bian', 0.35);
+    b.innerHTML = `<span class="rare">${J.short}</span><span class="ic" style="background-image:url(${pic});background-size:contain;background-position:center;width:132px;height:132px"></span><b>${J.titles[1]}</b><p>${J.desc[0]}</p>`;
+    b.onclick = () => {
+      if (performance.now() - cardsAt < 350) return;
+      CORE.chooseStartJob(S, id); SND.play('pick'); HERO.act('bian', 'sig_bian'); tip(`你是「${J.titles[1]}」！`, 2.4, true);
+      mode = 'play'; show('hud'); begin();
+    };
+    row.appendChild(b);
+  });
+  HERO.setOutfit(null, 0);
+  if (BOT_ON) setTimeout(() => { cardsAt = 0; const b = $('cardRow').children[0]; b && b.click(); }, 400);
 }
 // 接著上次存的地方玩（不重播劇情）
 function continueRun() {
@@ -219,6 +243,15 @@ function begin() {
 }
 
 // 劇情：人物站在畫面裡，下面一格對話
+// 撤離點等你的人：關卡原本指定的是總務或老闆；如果你已經帶這位當夥伴，撤離點就換成另一位，不會同時出現兩個
+function exitWho() {
+  const L = S.L, has = (k) => S.partners.some((x) => x.k === k);
+  let list = L.npc === 'both' ? ['tu', 'zhang'] : [L.npc];
+  list = list.filter((k) => !has(k));
+  if (!list.length) list = [has('tu') ? 'zhang' : 'tu'];
+  return list;
+}
+const WHO_NAME = { tu: '總務阿兔', zhang: '老闆' };
 function npcs() {
   if (!S) return [];
   const L = S.L, list = L.npc === 'both' ? ['tu', 'zhang'] : [L.npc];
@@ -227,10 +260,16 @@ function npcs() {
     const side = p.x > S.Wt - 260 ? -1 : 1;
     list.forEach((k, i) => out.push({ k, x: p.x + side * (110 + i * 95), y: p.y, h: k === 'zhang' ? 118 : 112, face: -side }));
   } else {
-    const ex = S.exit;
-    list.filter((k) => !(k === 'zhang' && S.helper)).forEach((k, i) => out.push({ k, x: ex.x + 80 + i * 90, y: ex.y, h: k === 'zhang' ? 118 : 112, face: -1 }));
+    const ex = S.exit, ew = exitWho();
+    ew.filter((k) => !(k === 'zhang' && S.helper)).forEach((k, i) => out.push({ k, x: ex.x + 80 + i * 90, y: ex.y, h: k === 'zhang' ? 118 : 112, face: -1 }));
   }
   return out;
+}
+// Boss 出場／倒下時的小對話（在關卡中途，講完回到遊戲）
+function bossTalk(key) {
+  const st = D.STORY[S.L.story], lines = st && st[key]; if (!lines) return;
+  talk(lines, () => { mode = 'play'; show('hud'); });
+  show('hud', 'talk');
 }
 function talk(lines, done) {
   talkQ = lines; talkI = -1; talkDone = done; mode = 'talk';
@@ -261,7 +300,7 @@ function showCards() {
   const nw = CORE.weapons(S).length;
   $('cardsTitle').innerHTML = (opening ? '出發前，挑一樣帶著' : S.lastChest ? '福袋！挑一個' : `升到 Lv ${S.p.lv - S.pending}！選一個`) + `<small>武器 ${nw}/${D.MAXW}</small>`;
   S.lastChest = false;
-  const row = $('cardRow'); row.innerHTML = '';
+  const row = $('cardRow'); row.innerHTML = ''; row.classList.remove('four');
   if (BOT_ON) setTimeout(() => { cardsAt = 0; const b = $('cardRow').children[0]; b && b.click(); }, 400);
   S.offer.forEach((k, i) => {
     const b = document.createElement('button'); b.className = 'card';
@@ -285,7 +324,83 @@ function showCards() {
     };
     row.appendChild(b);
   });
+  // 每次升級都多一張特別卡：選一位夥伴，或強化自己（出發前挑武器那次不出現）
+  if (!opening && S.offer.length && S.offer[0] !== 'heal') {
+    const bt = document.createElement('button'); bt.className = 'card r2'; bt.style.setProperty('--r', '1.4deg');
+    const pic = HERO.snapshot('bian', 0.35);
+    bt.innerHTML = `<span class="rare">夥伴・強化</span><span class="ic" style="background-image:url(${pic});background-size:contain;background-position:center;width:132px;height:132px"></span><b>夥伴／強化自己</b><p>選一位夥伴跟著你，或強化自己</p>`;
+    bt.onclick = () => {
+      if (performance.now() - cardsAt < 350) return;
+      SND.play('tap'); S.partnerOffer = CORE.buildPartnerOffer(S); S.state = 'partner'; showPartner();
+    };
+    row.appendChild(bt); row.classList.add('four');
+  }
 }
+// ---------- 職業晉升（Lv5／10／15）：用升級卡的畫面，三張卡＝繼續晉升／轉職 ----------
+function showPromo() {
+  mode = 'pick'; joy.id = null; joy.on = false; cardsAt = performance.now();
+  show('hud', 'cards');
+  const n = S.promoDone - S.promoPend + 1;
+  $('cardsTitle').innerHTML = `晉升時刻！<small>第 ${n}／${D.PROMO_LV.length} 次晉升${S.job.id ? '・轉職會降一級' : '・先選一條職業路線'}</small>`;
+  const row = $('cardRow'); row.innerHTML = ''; row.classList.remove('four');
+  const cur = S.job;
+  S.promoOffer.forEach((o, i) => {
+    const J = D.JOBS[o.job], b = document.createElement('button'); b.className = 'card r' + (o.kind === 'switch' ? 1 : 3) + (o.ready ? '' : ' lock');
+    b.style.setProperty('--r', ((i - 1) * 1.2) + 'deg');
+    HERO.setOutfit(o.ready ? o.job : null, o.ready ? o.tier : 0);
+    const pic = HERO.snapshot('bian', 0.35);
+    const tag = { up: '晉升', max: '維持', switch: '轉職・降一級', pick: '新職業' }[o.kind];
+    const pips = Array.from({ length: 3 }, (_, j) => `<i class="${j < o.tier ? 'on' : ''}"></i>`).join('');
+    b.innerHTML = `<span class="rare">${tag}</span><span class="ic" style="background-image:url(${pic});background-size:contain;background-position:center;width:132px;height:132px"></span><b>${J.titles[o.tier]}</b><span class="lvl">${pips}</span><p>${o.ready ? (o.kind === 'switch' ? J.name + '：' : '') + (J.desc[o.tier - 1] || J.desc[0]) : J.name + '：敬請期待'}</p>`;
+    b.onclick = () => {
+      if (performance.now() - cardsAt < 350 || !o.ready) return;
+      CORE.choosePromo(S, i); SND.play('pick'); HERO.act('bian', 'sig_bian'); promoFx();
+      if (S.state === 'partner') { showPartner(); return; }
+      mode = 'play'; show('hud');
+    };
+    row.appendChild(b);
+  });
+  HERO.setOutfit(cur.id, cur.tier);   // 預覽完把裝扮換回目前的
+  if (BOT_ON) setTimeout(() => { cardsAt = 0; const b = [...$('cardRow').children].find((x) => !x.classList.contains('lock')); b && b.click(); }, 400);
+}
+// 晉升後選夥伴：最多兩位，三種各管一件事
+function showPartner() {
+  mode = 'pick'; joy.id = null; joy.on = false; cardsAt = performance.now();
+  show('hud', 'cards');
+  $('cardsTitle').innerHTML = `選一位夥伴，或強化自己！<small>夥伴 ${S.partners.length}／${D.PARTNER_MAX}・強化自己 ${S.selfLv || 0} 級${S.partners.length >= D.PARTNER_MAX ? '・只能帶一位，選新夥伴會換掉現在這位' : ''}</small>`;
+  const row = $('cardRow'); row.innerHTML = ''; row.classList.toggle('four', S.partnerOffer.length >= 4);
+  HERO.setOutfit(S.job.id, S.job.tier);
+  const pk = (k) => (k === 'self' ? 'bian' : (k.startsWith('swap:') ? k.slice(5) : k) === 'hua' ? 'bianF' : k.startsWith('swap:') ? k.slice(5) : k);
+  const after = () => {
+    if (S.pending > 0 || S.chestPick > 0 || S.promoPend > 0) { CORE.step(S, 0); if (S.state === 'pick') { showCards(); return; } if (S.state === 'promo') { showPromo(); return; } }
+    mode = 'play'; show('hud');
+  };
+  S.partnerOffer.forEach((k, i) => {
+    const swap = k.startsWith('swap:'), kk = swap ? k.slice(5) : k;
+    const P = k === 'self' ? { name: '強化自己', role: '主角', desc: `血量 +30 並補滿、攻擊 +15%、跑速 +5%（目前 ${S.selfLv || 0} 級）` } : D.PARTNERS[kk], b = document.createElement('button'); b.className = 'card r' + (kk === 'zhang' ? 3 : k === 'self' ? 2 : 1);
+    b.style.setProperty('--r', ((i - 1) * 1.2) + 'deg');
+    const pic = HERO.snapshot(pk(k), 0.35);
+    b.innerHTML = `<span class="rare">${swap ? '換夥伴' : P.role}</span><span class="ic" style="background-image:url(${pic});background-size:contain;background-position:center;width:132px;height:132px"></span><b>${P.name}</b><p>${P.desc}</p>`;
+    b.onclick = () => {
+      if (performance.now() - cardsAt < 350) return;
+      if (swap) { showLeave(i, kk, after); return; }
+      CORE.choosePartner(S, i); SND.play('pick'); tip(k === 'self' ? `強化自己！血量、攻擊、跑速都提升了（${S.selfLv} 級）` : `${P.name}加入了！`, 2.4, true);
+      after();
+    };
+    row.appendChild(b);
+  });
+  if (BOT_ON) setTimeout(() => { cardsAt = 0; const b = $('cardRow').children[0]; b && b.click(); }, 400);
+}
+// 只能帶一位夥伴：選了新夥伴，現在這位就被換掉，並留下一段話
+function showLeave(i, toK, after) {
+  const who = S.partners[0] && S.partners[0].k;
+  if (!who || !CORE.choosePartner(S, i, who)) return;
+  SND.play('pick');
+  const lines = D.DISCARD[who], hi = D.PARTNERS[toK].name;
+  const done = () => { tip(`${hi}加入了！`, 2.4, true); after(); };
+  if (lines) { talk(lines, done); show('hud', 'talk'); } else done();
+}
+function promoFx() { tip(`晉升成「${D.JOBS[S.job.id].titles[S.job.tier]}」！裝備換新`, 2.6, true); }
 function take(k, dropK) {
   CORE.choose(S, k, dropK); SND.play('pick');
   if (S.pending > 0 || S.chestPick > 0) { CORE.step(S, 0); if (S.state === 'pick') { showCards(); return; } }
@@ -295,7 +410,7 @@ function take(k, dropK) {
 function showDrop(k) {
   const sk = D.SKILLS[k];
   $('cardsTitle').innerHTML = `武器最多帶 ${D.MAXW} 種<small>丟掉一種換「${sk.name}」，或放棄</small>`;
-  const row = $('cardRow'); row.innerHTML = '';
+  const row = $('cardRow'); row.innerHTML = ''; row.classList.remove('four');
   const box = document.createElement('div'); box.className = 'drops';
   for (const w of CORE.weapons(S)) {
     const ws = D.SKILLS[w], b = document.createElement('button'); b.className = 'drop r' + ws.rare;
@@ -326,7 +441,7 @@ $('pMenu').onclick = () => { saveRun(); goTitle(); };
 $('pMute').onclick = () => { SND.setMuted(!SND.muted()); $('pMute').textContent = '聲音：' + (SND.muted() ? '關' : '開'); };
 
 function cleared() {
-  clearRun();
+  clearRun(); carry = CORE.snapshotCarry(S); save.carry = carry;   // 存起來，關掉頁面再回來也在
   mode = 'outro'; story = true; joy.on = false;
   SND.urgent(false); SND.music(null);
   HERO.act('bian', 'sig_bian', true);
@@ -428,7 +543,7 @@ function result(win) {
   $('rLine').textContent = win ? (last ? '尾牙開席囉！全部區域都走完了。' : '老闆評語：小六今天很努力，快可以吃尾牙了（還不行）。') : got < 3 ? '再來一次！先挑能打一整圈的武器會比較好過。' : '東西都拿到了，差一點！撤離時記得一直走位。';
   $('rNext').textContent = win ? (last ? '再玩一次' : '下一關') : '再來一次';
   $('rNext').onclick = () => { SND.play('tap'); startLevel(win ? (last ? 0 : li + 1) : li); };
-  $('rMenu').onclick = () => { SND.play('tap'); goTitle(); };
+  $('rMenu').onclick = () => { SND.play('tap'); goSelect(); };
   SND.play(win ? 'clear' : 'dead');
 }
 
@@ -465,18 +580,25 @@ function handleEvents() {
       case 'horde': if (e.label !== 'last' && e.label !== 'boss') { SND.play('horde'); tip(`一大群紅蝦怪從${e.side === 'left' ? '左' : '右'}邊來了！`, 2.4, true); } break;
       case 'exit': {
         SND.play('exit'); SND.urgent(true);
-        if (!S.L.boss) { const ex = S.exit, room = D.ROOM, name = roomName(S.rooms[ex.f][Math.floor(ex.x / room.W)]); tip(`三樣都拿齊了！回 ${ex.f + 1} 樓${name}找${D.NAMES[S.L.npc] || '主管'}`, 3.6, true); }
-        else if (S.L.boss.at === 'exit') tip(`${D.MONS[S.L.boss.k].name}倒了！站在撤離點撐 ${S.exit.wait} 秒`, 3.2, true);
+        if (!S.L.boss) { const ex = S.exit, room = D.ROOM, name = roomName(S.rooms[ex.f][Math.floor(ex.x / room.W)]); tip(`三樣都拿齊了！回 ${ex.f + 1} 樓${name}找${exitWho().map((k) => WHO_NAME[k]).join('、')}`, 3.6, true); }
+        else if (S.L.boss.at === 'exit' || S.L.boss.at === 'chase') tip(`${D.MONS[S.L.boss.k].name}倒了！站在撤離點撐 ${S.exit.wait} 秒`, 3.2, true);
         else tip(`${D.MONS[S.L.boss.k].name}倒了！到頂樓的撤離點`, 3.2, true);
         break;
       }
-      case 'boss': SND.play('boss'); SND.music('boss'); SND.urgent(true); tip(e.at === 'exit' ? `${e.name}守在撤離點！打倒牠才能走` : `頂樓的${e.name}出現了！`, 3.2, true); break;
+      case 'boss': SND.play('boss'); SND.music('boss' + (S.li + 1)); SND.urgent(true); bossTalk('bossIn'); tip(e.at === 'chase' ? `${e.name}現身了！打倒牠才能走` : e.at === 'exit' ? `${e.name}守在撤離點！打倒牠才能走` : `頂樓的${e.name}出現了！`, 3.2, true); break;
       case 'summon': SND.play('summon'); break;
       case 'bounce': SND.play('bounce'); break;
+      case 'nurseTf': SND.play('transform'); tip('總務變身護士兔！幫你回血', 2.2); break;
+      case 'nurseBack': SND.play('poof'); break;
+      case 'nurseWarp': SND.play('poof'); break;
+      case 'stamp': SND.play('boom'); break;
+      case 'hammer': SND.play('boom'); break;
       case 'flute': SND.play('flute'); break;
       case 'dust': SND.play('dust'); break;
-      case 'bossDown': SND.play('boom'); SND.music('song'); break;
-      case 'waitStart': tip(`站在房間裡等${S.L.npc === 'zhang' ? '老闆' : '總務阿兔'}開門，撐住！`, 2.6, true); break;
+      case 'bossDown': SND.play('boom'); SND.music('song'); bossTalk('bossOut'); break;
+      case 'armWind': SND.play('flash'); break;
+      case 'wheelStop': SND.play(e.slot === 'jackpot' ? 'chest' : 'bounce'); break;
+      case 'waitStart': tip(`站在房間裡等${WHO_NAME[exitWho()[0]]}開門，撐住！`, 2.6, true); break;
       case 'heroIn': SND.play('poof'); if (!e.quiet && !S.heroSeen) { S.heroSeen = true; tip('老闆來幫忙了！等一下會變身', 2.4); } break;
       case 'heroTf': SND.play('transform'); HERO.act('zhang', 'handsup'); tip('老闆變身！打怪超人登場（20 秒）', 2.2); break;
       case 'heroBack': SND.play('poof'); tip('變回老闆，休息 20 秒再變身', 2); break;
@@ -495,13 +617,15 @@ let lastHud = '';
 function hud() {
   const p = S.p;
   $('xpBar').style.width = Math.min(100, p.xp / p.need * 100).toFixed(1) + '%';
-  const key = `${p.lv}|${Math.floor(S.t)}|${S.kills}`;
-  if (key !== lastHud) { lastHud = key; $('lvN').textContent = 'Lv ' + p.lv; $('clock').textContent = fmt(S.t); $('kills').textContent = '擊倒 ' + S.kills; }
+  const jb = S.job && S.job.id ? ' ' + D.JOBS[S.job.id].titles[S.job.tier] : '';
+  HERO.setOutfit(S.job && S.job.id, S.job ? S.job.tier : 0);
+  const key = `${p.lv}|${Math.floor(S.t)}|${S.kills}|${jb}`;
+  if (key !== lastHud) { lastHud = key; $('lvN').textContent = 'Lv ' + p.lv + jb; $('clock').textContent = fmt(S.t); $('kills').textContent = '擊倒 ' + S.kills; }
   const ex = S.exit, w = $('wait');
   const showWait = mode === 'play' && ex.open && ex.wait > 0;
   w.classList.toggle('hide', !showWait);
   if (showWait) {
-    const who = S.L.npc === 'zhang' ? '老闆' : '總務阿兔';
+    const who = WHO_NAME[exitWho()[0]];
     w.classList.toggle('out', !ex.inRoom);
     $('waitText').textContent = ex.inRoom ? `${who}開門中…撐 ${Math.ceil(ex.left)} 秒` : `回撤離點！還要撐 ${Math.ceil(ex.left)} 秒`;
     $('waitBar').style.width = ((1 - ex.left / ex.wait) * 100).toFixed(1) + '%';
@@ -525,6 +649,8 @@ function frame(now) {
       handleEvents();
       if (mode !== 'play') break;
       if (S.state === 'pick') { showCards(); break; }
+      if (S.state === 'promo') { showPromo(); break; }
+      if (S.state === 'partner') { showPartner(); break; }
     }
     if (n === 4) acc = 0;
   } else if (mode === 'dead' || mode === 'outro') {
@@ -548,8 +674,10 @@ function frame(now) {
   }
   const vis = ns.filter((n) => Math.abs(n.x - S.cam.x) < view.w / 2 + 120 && Math.abs(n.y - S.cam.y) < view.h / 2 + 200);
   for (const n of ns) HERO.update(n.k, dt, T, { speed: 0, face: n.face, front: true });
+  if (!story && S.hua) HERO.update('bianF', dt, T, { speed: S.hua.moving / 120, face: S.hua.face, front: S.hua.moving < 5, climb: !!S.hua.climbing, keepFront: true });
+  if (!story && S.nurse) HERO.update(S.nurse.ph === 'heal' ? 'tuN' : 'tu', dt, T, { speed: S.nurse.moving / 120, face: S.nurse.face, front: S.nurse.moving < 5, climb: !!S.nurse.climbing, keepFront: true });
   const h = S.helper;
-  if (h && !story) HERO.update(h.ph === 'fight' ? 'needle' : 'zhang', dt, T, { speed: h.ph === 'calm' ? h.moving / 120 : 0, face: h.face, front: h.ph !== 'calm' || h.moving < 5 });
+  if (h && !story) HERO.update(h.ph === 'fight' ? 'needle' : 'zhang', dt, T, { speed: h.ph === 'calm' ? h.moving / 120 : 0, face: h.face, front: h.ph !== 'calm' || h.moving < 5, climb: !!h.climbing, keepFront: true });
   R.draw(S, { t: T, dt, hudBottom: $('hud').getBoundingClientRect().bottom, joy: mode === 'play' && joy.on ? toUi(joy) : null, npcs: vis, story: story || mode !== 'play' });
   if (S && !['title', 'select', 'loading', 'op', 'enter'].includes(mode)) hud();
   if (mode === 'play' && S.t - lastRunSave >= 5) saveRun();
@@ -559,9 +687,10 @@ const toUi = (j) => ({ bx: j.bx, by: j.by, x: j.bx + Math.max(-54, Math.min(54, 
 // ---------- 開機 ----------
 $('bStart').onclick = () => {
   SND.play('tap');
-  const go = () => { const n = D.LEVELS.findIndex((_, i) => bestOf()[i] == null); startLevel(n < 0 ? 0 : n); };
+  const go = () => startLevel(0);   // 開始＝一律從第 1 關（工廠）起；中途離開的進度用「繼續」
   go();
 };
+$('bSelect').onclick = () => { SND.play('tap'); goSelect(); };   // 測試用：五關都可以直接選
 $('bContinue').onclick = () => { SND.play('tap'); continueRun(); };
 $('bOP').onclick = () => startOP();
 $('bEnter').onclick = () => { SND.unlock(); fullscreen(); startOP(); };
@@ -581,14 +710,14 @@ async function boot() {
     mode = 'enter';
     $('ldText').classList.add('hide'); $('ldBar').parentNode.classList.add('hide');
     $('bEnter').classList.remove('hide'); $('ldNote').classList.remove('hide');
-    S = mk(2, { seed: 7, vw: view.w, vh: view.h });
+    S = mk(0, { seed: 7, vw: view.w, vh: view.h });   // 片頭從工廠（第 1 關場景）開始
   }
   requestAnimationFrame(loop);
 }
 boot();
 
 // 測試用
-window.G = { get S() { return S; }, get mode() { return mode; }, start: startLevel, cards: (o) => { S.offer = o; S.state = "pick"; showCards(); },
+window.G = { frame: (n) => frame(n), get S() { return S; }, get mode() { return mode; }, start: startLevel, cards: (o) => { S.offer = o; S.state = "pick"; showCards(); },
   // 手動跑 sec 秒的畫面（預覽視窗藏起來時 requestAnimationFrame 不會跑）
   run(sec) { for (let i = 0; i < sec * 60; i++) frame(last + 1000 / 60); return mode; },
   // 量一格要畫多久（毫秒）

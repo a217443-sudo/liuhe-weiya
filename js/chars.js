@@ -2,7 +2,7 @@
 // 取代原作者的 .glb 模型：工人（男／女）、總務阿兔、老闆、打怪超人
 import * as THREE from 'three';
 import { addGear } from './gear.js';
-import { rigGeometry } from './autorig.js?v=26';
+import { rigGeometry } from './autorig.js?v=28';
 
 const RAMP = (() => { const t = new THREE.DataTexture(new Uint8Array([105, 105, 105, 255, 178, 178, 178, 255, 255, 255, 255, 255]), 3, 1); t.minFilter = t.magFilter = THREE.NearestFilter; t.needsUpdate = true; return t; })();
 const OUT = new THREE.MeshBasicMaterial({ color: 0x1c140f, side: THREE.BackSide });
@@ -96,7 +96,7 @@ function build(kind) {
 export function makeChar(kind) { return build(kind); }
 // 用 Hunyuan3D 生成、自動綁骨的 3D 模型當角色（geo 是 GLB 裡的幾何）
 export function makeRigChar(geo, kind = 'rigged', map = null) {
-  const rig = rigGeometry(geo, undefined, { map }), root = new THREE.Group(); root.add(rig.root);
+  const rig = rigGeometry(geo, undefined, { map, armClean: kind === 'workerM' || kind === 'workerF' ? [0.15, 0.19] : kind === 'tu' ? [0.12, 0.16, 0.58] : null }), root = new THREE.Group(); root.add(rig.root);
   return { root, model: rig.root, parts: null, rig, kind, speed: 0, w: 0, phase: 0, sig: null, sigT: 0 };
 }
 function updateRig(a, dt, t) {
@@ -105,7 +105,7 @@ function updateRig(a, dt, t) {
   if (a.sig) {
     a.sigT += dt; const d = DUR[a.sig] || 1.4, k = a.sigLoop ? a.sigT : Math.min(a.sigT, d);
     if (!a.sigLoop && a.sigT > d) { a.sig = null; return; }
-    if (a.sig === 'hop') { a.model.position.y = Math.sin(Math.PI * Math.min(1, k / d)) * 0.28; b[2].rotation.set(-2.1, 0, -0.3); b[3].rotation.set(-2.1, 0, 0.3); b[8].rotation.x = b[9].rotation.x = -0.25; b[6].rotation.x = b[7].rotation.x = 0.6 * Math.sin(Math.PI * Math.min(1, k / d)); }
+    if (a.sig === 'hop') { a.model.position.y = Math.sin(Math.PI * Math.min(1, k / d)) * 0.28; b[2].rotation.set(-0.35, 0, -0.32); b[3].rotation.set(-0.35, 0, 0.32); b[8].rotation.x = b[9].rotation.x = -0.35; b[6].rotation.x = b[7].rotation.x = 0.6 * Math.sin(Math.PI * Math.min(1, k / d)); }
     else if (a.sig === 'stumble') { const f = Math.min(1, k / d); a.model.rotation.z = Math.sin(f * 14) * 0.25 * (1 - f); b[0].rotation.x = 0.5 * Math.sin(f * Math.PI); }
     else if (a.sig === 'talk') {   // 講話：手臂不側舉（側舉會把衣服側邊拉成黑色破面），改成手肘彎起、前臂在胸前比劃
       const s = Math.sin(k * 5), s2 = Math.sin(k * 3.1 + 1);
@@ -113,7 +113,7 @@ function updateRig(a, dt, t) {
       b[2].rotation.set(-0.12, 0, 0.1); b[8].rotation.set(-0.3, 0, 0);
       b[1].rotation.x = 0.04 + Math.max(0, s) * 0.06; b[1].rotation.z = Math.sin(k * 2) * 0.05;
     }
-    else { a.model.position.y = Math.abs(Math.sin(k * 8)) * 0.07; const wv = Math.sin(k * 8) * 0.25; b[2].rotation.set(-2.0 + wv, 0, -0.3); b[3].rotation.set(-2.0 - wv, 0, 0.3); b[8].rotation.x = -0.3 + wv; b[9].rotation.x = -0.3 - wv; b[1].rotation.z = Math.sin(k * 8) * 0.12; b[4].rotation.x = Math.sin(k * 8) * 0.15; b[5].rotation.x = -Math.sin(k * 8) * 0.15; }   // 歡呼：雙手舉高
+    else { a.model.position.y = Math.abs(Math.sin(k * 8)) * 0.07; const wv = Math.sin(k * 8) * 0.25; b[2].rotation.set(-0.85 + wv * 0.4, 0, -0.45); b[3].rotation.set(-0.85 - wv * 0.4, 0, 0.45); b[8].rotation.x = b[9].rotation.x = 0;  b[1].rotation.z = Math.sin(k * 8) * 0.12; b[4].rotation.x = Math.sin(k * 8) * 0.15; b[5].rotation.x = -Math.sin(k * 8) * 0.15; }   // 歡呼：雙手舉高
   }
 }
 

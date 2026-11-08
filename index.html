@@ -28,7 +28,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=133">
+<link rel="stylesheet" href="style.css?v=135">
 </head>
 <body>
 <canvas id="cv"></canvas>
@@ -92,7 +92,7 @@
     <div class="t-btns">
       <button class="btn big hide" id="bContinue">繼續</button>
       <button class="btn big" id="bStart">開始</button>
-      <div class="diff" id="genderT"><span>角色</span><button data-g="m">男生</button><button data-g="f">女生</button></div>
+      <button class="btn ghost" id="bSelect">選關（測試）</button>
       <div class="diff" id="diffT"><span>難度</span><button data-h="0">一般</button><button data-h="1">困難</button></div>
     </div>
     <button class="op-again" id="bOP">再看一次片頭</button>
@@ -139,9 +139,9 @@
 
 <a id="credit" href="https://pokemonida99.github.io/bian-halloween/" target="_blank" rel="noopener">參考山頂國小小編製作</a>
 
-<script src="js/data.js?v=122"></script>
-<script src="js/core.js?v=7"></script>
-<script src="js/audio.js?v=60"></script>
+<script src="js/data.js?v=140"></script>
+<script src="js/core.js?v=28"></script>
+<script src="js/audio.js?v=61"></script>
 <script>
   if (!(window.HTMLScriptElement && HTMLScriptElement.supports && HTMLScriptElement.supports('importmap'))) {
     const sc = document.createElement('script'); sc.async = true; sc.src = 'vendor/es-module-shims.js'; document.head.appendChild(sc);
@@ -150,6 +150,6 @@
 <script type="importmap">
 {"imports":{"three":"./vendor/three/build/three.module.min.js","three/addons/":"./vendor/three/examples/jsm/"}}
 </script>
-<script type="module" src="js/main.js?v=140"></script>
+<script type="module" src="js/main.js?v=167"></script>
 </body>
 </html>
