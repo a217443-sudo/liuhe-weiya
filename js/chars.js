@@ -2,7 +2,7 @@
 // 取代原作者的 .glb 模型：工人（男／女）、總務阿兔、老闆、打怪超人
 import * as THREE from 'three';
 import { addGear } from './gear.js';
-import { rigGeometry } from './autorig.js?v=28';
+import { rigGeometry } from './autorig.js?v=48';
 
 const RAMP = (() => { const t = new THREE.DataTexture(new Uint8Array([105, 105, 105, 255, 178, 178, 178, 255, 255, 255, 255, 255]), 3, 1); t.minFilter = t.magFilter = THREE.NearestFilter; t.needsUpdate = true; return t; })();
 const OUT = new THREE.MeshBasicMaterial({ color: 0x1c140f, side: THREE.BackSide });
@@ -96,7 +96,7 @@ function build(kind) {
 export function makeChar(kind) { return build(kind); }
 // 用 Hunyuan3D 生成、自動綁骨的 3D 模型當角色（geo 是 GLB 裡的幾何）
 export function makeRigChar(geo, kind = 'rigged', map = null) {
-  const rig = rigGeometry(geo, undefined, { map, armClean: kind === 'workerM' || kind === 'workerF' ? [0.15, 0.19] : kind === 'tu' ? [0.12, 0.16, 0.58] : null }), root = new THREE.Group(); root.add(rig.root);
+  const rig = rigGeometry(geo, undefined, { latMul: kind === 'zhang' ? 1.6 : 1, map, soft: kind === 'hrman' || kind === 'mtman', armClean: kind === 'workerM' || kind === 'workerF' || kind === 'hrman' || kind === 'mtman' ? [0.125, 0.165, 0.47] : kind === 'tu' ? [0.12, 0.16, 0.58] : null }), root = new THREE.Group(); root.add(rig.root);
   return { root, model: rig.root, parts: null, rig, kind, speed: 0, w: 0, phase: 0, sig: null, sigT: 0 };
 }
 function updateRig(a, dt, t) {
@@ -113,7 +113,7 @@ function updateRig(a, dt, t) {
       b[2].rotation.set(-0.12, 0, 0.1); b[8].rotation.set(-0.3, 0, 0);
       b[1].rotation.x = 0.04 + Math.max(0, s) * 0.06; b[1].rotation.z = Math.sin(k * 2) * 0.05;
     }
-    else { a.model.position.y = Math.abs(Math.sin(k * 8)) * 0.07; const wv = Math.sin(k * 8) * 0.25; b[2].rotation.set(-0.85 + wv * 0.4, 0, -0.45); b[3].rotation.set(-0.85 - wv * 0.4, 0, 0.45); b[8].rotation.x = b[9].rotation.x = 0;  b[1].rotation.z = Math.sin(k * 8) * 0.12; b[4].rotation.x = Math.sin(k * 8) * 0.15; b[5].rotation.x = -Math.sin(k * 8) * 0.15; }   // 歡呼：雙手舉高
+    else { a.model.position.y = Math.abs(Math.sin(k * 8)) * 0.07; const wv = Math.sin(k * 8) * 0.25; const zz = a.kind === 'zhang' ? 0.1 : 0.3; b[2].rotation.set(-0.5 + wv * 0.3, 0, -zz); b[3].rotation.set(-0.5 - wv * 0.3, 0, zz); b[8].rotation.x = -1.05 - wv * 0.5; b[9].rotation.x = -1.05 + wv * 0.5; b[1].rotation.z = Math.sin(k * 8) * 0.1; }   // 歡呼：上臂只微微抬起、前臂彎起舉拳（大幅側舉會把衣服邊拉出黑片）；腿不動（動腿會把鞋底拉出一條黑尖）
   }
 }
 

@@ -8,19 +8,19 @@
 
   // 升級經驗：第 n 級升到 n+1 要幾顆糖
   // 升級所需經驗：比原本多很多，後面幾級更陡（怪多的後面關卡才不會一直升級）
-  const needXp = (lv) => Math.round(4 + lv * 3.2 + lv * lv * 0.28);
+  const needXp = (lv) => Math.round((4 + lv * 3.2 + lv * lv * 0.28) * 2.3);   // 升級要的經驗再加倍多（原本升太快）
 
   // 怪物：r 半徑、spd 每秒 px、dmg 碰一下扣多少、xp 掉幾顆糖、fly 會飛（穿樓板）
   const MONS = {
     pumpkin: { name: '紅蝦怪', img: 'm-pumpkin', hp: 20, spd: 105, r: 22, dmg: 5, xp: 1 },
     bat:     { name: '飛盤怪', img: 'm-bat', hp: 9, spd: 150, r: 17, dmg: 4, xp: 1, fly: true },
-    ghost:   { name: '海膽怪', img: 'm-ghost', hp: 46, spd: 70, r: 25, dmg: 7, xp: 2, fly: true },
+    ghost:   { name: '紅燈籠怪', img: 'm-ghost', hp: 46, spd: 70, r: 25, dmg: 7, xp: 2, fly: true },
     mummy:   { name: '米糕怪', img: 'm-mummy', hp: 120, spd: 62, r: 27, dmg: 10, xp: 4 },
     // 工廠關卡專用（前兩關）：搞笑的 NG 煞車盤、黑暗的 NG 輪圈（圖片 art/f-m-ngdisc、f-m-ngwheel）
     ngdisc:  { name: 'NG 不良品煞車盤', img: 'm-ngdisc', hp: 28, spd: 125, r: 24, dmg: 5, xp: 1 },
     ngwheel: { name: 'NG 不良品輪圈', img: 'm-ngwheel', hp: 85, spd: 92, r: 27, dmg: 9, xp: 3 },
     screw:   { name: '螺絲怪', img: 'm-screw', hp: 36, spd: 118, r: 22, dmg: 5, xp: 1 },   // 第 1 關 Boss 半血時叫出來的小弟（設備相關）
-    b1:      { name: '機械手臂王', img: 'm-b1', hp: 3500, spd: 160, r: 70, dmg: 24, xp: 30, boss: true, ai: 'arm' },   // 第 1 關：失控的機械手臂（重拳砸地、半血叫毛邊怪）
+    b1:      { name: '機械手臂王', img: 'm-b1', hp: 7500, spd: 165, r: 70, dmg: 30, xp: 30, boss: true, ai: 'arm' },   // 第 1 關：失控的機械手臂（重拳砸地、半血叫毛邊怪）
     b2:      { name: 'NG 輪圈怪', img: 'm-b2', hp: 6000, spd: 170, r: 66, dmg: 26, xp: 36, boss: true, ai: 'roll' },   // 第 2 關：滾動衝撞，停下喘氣時最好打
     b3:      { name: '廚房大總管', img: 'm-b3', hp: 9000, spd: 150, r: 76, dmg: 30, xp: 44, boss: true, ai: 'pot' },   // 第 3 關：丟米糕砲彈、鍋蓋掀開才好打
     b4:      { name: '銘謝惠顧王', img: 'm-b4', hp: 12500, spd: 140, r: 78, dmg: 32, xp: 52, boss: true, ai: 'wheel' },   // 第 4 關：轉盤停在哪格決定怎麼打
@@ -148,10 +148,19 @@
   // ---------- 夥伴：第一、二次晉升後各選一位，最多兩位一起跟著主角（三位候選，各管一種事）----------
   const PARTNER_MAX = 1;   // 一次只能帶一位夥伴；選別位會把現在這位換掉
   const PARTNERS = {
-    zhang: { name: '老闆', role: '變身超人', desc: '定時變身「打怪超人」，衝進怪群撞飛怪物（職階越高越痛）' },
-    tu: { name: '總務阿兔', role: '變身護士', desc: '定時變身「護士兔」，用打針幫你持續回血' },
+    zhang: { name: '老闆', role: '變身超人', desc: '定時變身「打怪超人」，衝進怪群撞飛怪物（階級越高越痛）' },
+    tu: { name: '總務阿兔', role: '變身護士', desc: '定時變身「護士兔」，用打針幫你持續回血（階級越高補越多）' },
+    hr: { name: '人資', role: '控場增益', desc: '定時公告張貼定住怪、加班單讓怪變慢；階級越高，考績標記、面試、調薪、請假單都會加入' },
+    wk: { name: '維修人員', role: '架砲台', desc: '定時在你身邊架設自動砲台幫你開火（階級越高砲台越多、越痛）' },
   };
 
+
+  // 寶箱／升級卡「符合人設」：各職業比較常出現的道具（用技能代號）。機台＝重機具、維修＝工具與氣動、人資＝福利與行政
+  const JOB_AFF = {
+    op: ['glow', 'bomb', 'thunder', 'buddy', 'ball', 'tack', 'hoop', 'shoe', 'cape'],
+    mt: ['candy', 'beam', 'flash', 'eraser', 'frost', 'brew', 'shoe', 'clock'],
+    hr: ['magnet', 'clock', 'bento', 'flash', 'cape', 'eraser', 'frost'],
+  };
   const MAXLV = 5;
   // 困難版：怪物量變多（生怪速度、同時上限、大群人數），升級要的金元寶變多
   // 困難版：怪物約一般版 4 倍多（出怪、大群都 ×3），但每隻血只有 0.4 倍；升級要的金元寶 ×2；同時在場有上限（cap，大群也算）
@@ -185,32 +194,72 @@
     { name: '組裝區', sub: '把公文送去會議室', story: 'l1', wait: 10, skin: 'f',
       rooms: ['class hall class music', 'class class hall library', 'hall gym hall class'],
       ladders: [[0, 0.5], [0, 3.5], [1, 2.5]],
-      items: [['doc', 2, 0.5], ['seal', 1, 3.6], ['blueprint', 2, 3.5]], chests: [[1, 1.5]],
+      items: [['doc', 2, 0.5], ['seal', 1, 3.6], ['blueprint', 2, 3.5]], chests: [[1, 1.5], [0, 2.5], [2, 1.5], [1, 0.5]],
       start: [0, 1.5], exit: [0, 1.5], npc: 'tu', boss: { k: 'b1', at: 'chase' },
+      // 平面（俯視）地圖試作：一整張大工廠。obs＝障礙物（k 種類、x 中心、y 底部、w/h 畫的大小；底部 40% 是碰撞範圍）
+      flat: {
+        W: 2600, H: 1900, start: [1300, 1700], exit: [1300, 1700],
+        zones: [['機台加工區', 80, 280, 1380, 640, '90,150,255'], ['鑄造熔煉區', 1520, 280, 1000, 640, '255,110,50'], ['組裝零件區', 80, 940, 2440, 460, '120,220,140'], ['倉庫區', 80, 1430, 1000, 430, '255,200,90'], ['出貨區', 1120, 1430, 1400, 430, '190,140,255']],
+        obs: [{ k: 'cnc', x: 260, y: 500, w: 250, h: 251 }, { k: 'lathe', x: 720, y: 500, w: 270, h: 220 }, { k: 'cnc', x: 1180, y: 500, w: 250, h: 251 }, { k: 'press', x: 480, y: 900, w: 230, h: 245 }, { k: 'lathe', x: 960, y: 900, w: 270, h: 220 }, { k: 'press', x: 1440, y: 900, w: 230, h: 245 }, { k: 'furnace', x: 1720, y: 500, w: 240, h: 264 }, { k: 'ladle', x: 2230, y: 500, w: 210, h: 206 }, { k: 'ladle', x: 1950, y: 900, w: 210, h: 206 }, { k: 'furnace', x: 2380, y: 900, w: 240, h: 264 }, { k: 'assy', x: 330, y: 1230, w: 260, h: 231 }, { k: 'robot', x: 800, y: 1230, w: 270, h: 253 }, { k: 'assy', x: 1270, y: 1230, w: 260, h: 231 }, { k: 'robot', x: 1740, y: 1230, w: 270, h: 253 }, { k: 'belt', x: 2230, y: 1230, w: 290, h: 261 }, { k: 'rack', x: 260, y: 1660, w: 200, h: 236 }, { k: 'crate', x: 700, y: 1660, w: 220, h: 209 }, { k: 'fork', x: 1750, y: 1640, w: 210, h: 229 }, { k: 'crate', x: 2150, y: 1660, w: 220, h: 209 }],
+        items: [['doc', 150, 700], ['seal', 2490, 1090], ['blueprint', 150, 1330]],
+        chests: [[2246, 1304], [2356, 1750], [1486, 1232], [950, 1393], [2407, 500], [437, 1483], [1512, 361], [701, 834]],
+      },
       waves: { rate: 1.0, grow: 1.0, cap: 120, mix: [['pumpkin', 10, 0], ['ngdisc', 4, 15], ['bat', 3, 45]], horde: 50, hordeN: 16 } },
     { name: '品管室與 CNC 區', sub: '拿到車鑰匙，準備開車去尾牙', story: 'l2', wait: 10, skin: 'f',
       rooms: ['nurse lab hall class', 'lab hall class nurse', 'class nurse lab hall', 'hall lab hall class'],
       ladders: [[0, 3.5], [1, 0.5], [1, 2.5], [2, 3.5]],
-      items: [['caliper', 3, 0.5], ['key', 1, 3.5], ['toolbox', 2, 0.5]], chests: [[2, 2.5], [3, 3.5]],
+      items: [['caliper', 3, 0.5], ['key', 1, 3.5], ['toolbox', 2, 0.5]], chests: [[2, 2.5], [3, 3.5], [0, 1.5], [1, 1.5], [3, 2.5]],
       start: [0, 0.5], exit: [0, 0.5], npc: 'tu', boss: { k: 'b2', at: 'chase' },
+      flat: {
+        W: 2600, H: 1900, start: [1300, 1700], exit: [1300, 1700],
+        floors: [['floor-qc', 80, 280, 1420, 1060]],
+        zones: [['品管室', 80, 280, 1420, 1060, '90,170,255'], ['CNC 加工區', 1540, 280, 980, 700, '255,200,90'], ['不良品隔離區', 1540, 1010, 980, 330, '255,90,80'], ['停車場', 80, 1370, 2440, 490, '200,160,255']],
+        obs: [{ k: 'cmm', x: 300, y: 520, w: 250, h: 318 }, { k: 'vision', x: 760, y: 520, w: 230, h: 318 }, { k: 'gauge', x: 1200, y: 520, w: 250, h: 320 }, { k: 'glass', x: 440, y: 830, w: 400, h: 319, col: 0.22 }, { k: 'glass', x: 1070, y: 830, w: 400, h: 319, col: 0.22 }, { k: 'insp', x: 330, y: 1180, w: 290, h: 294 }, { k: 'cabinet', x: 800, y: 1180, w: 190, h: 338 }, { k: 'sample', x: 1280, y: 1160, w: 240, h: 316 }, { k: 'cnc', x: 1780, y: 520, w: 250, h: 251 }, { k: 'cnc', x: 2260, y: 520, w: 250, h: 251 }, { k: 'lathe', x: 2020, y: 900, w: 270, h: 220 }, { k: 'ngbin', x: 1800, y: 1280, w: 250, h: 243 }, { k: 'ngbin', x: 2250, y: 1280, w: 250, h: 243 }, { k: 'rack', x: 300, y: 1680, w: 200, h: 236 }, { k: 'crate', x: 780, y: 1700, w: 220, h: 209 }, { k: 'fork', x: 1900, y: 1700, w: 210, h: 229 }, { k: 'crate', x: 2380, y: 1650, w: 220, h: 209 }],
+        items: [['caliper', 580, 1230], ['key', 2490, 1790], ['toolbox', 980, 1240]],
+        chests: [[1729, 1513], [785, 636], [1456, 673], [2096, 586], [587, 1697], [1785, 960], [2240, 1742], [2448, 1297]],
+      },
       waves: { rate: 1.6, grow: 1.6, cap: 170, mix: [['pumpkin', 10, 0], ['ngdisc', 4, 0], ['bat', 4, 20], ['ghost', 3, 40], ['ngwheel', 3, 30], ['mummy', 2, 70]], horde: 42, hordeN: 28 } },
-    { name: '食材倉庫與包廂', sub: '米糕怪很耐打', story: 'l3', wait: 10,
+    { name: '餐廳廚房', sub: '米糕怪很耐打', story: 'l3', wait: 10,
       rooms: ['library music hall library class', 'music hall library class music', 'hall class music hall library', 'class library hall music hall'],
       ladders: [[0, 0.5], [0, 4.5], [1, 2.5], [2, 0.5], [2, 4.5]],
-      items: [['cape', 3, 4.5], ['camera', 2, 2.5], ['radio', 1, 0.5]], chests: [[1, 3.5], [3, 1.5]],
+      items: [['cape', 3, 4.5], ['camera', 2, 2.5], ['radio', 1, 0.5]], chests: [[1, 3.5], [3, 1.5], [0, 3.5], [2, 3.5], [3, 2.5]],
       start: [0, 2.5], exit: [0, 2.5], npc: 'zhang', boss: { k: 'b3', at: 'chase' },
+      flat: {
+        W: 2600, H: 1900, start: [1300, 1700], exit: [1300, 1700], floor: 'floor-kitchen',
+        zones: [['冷凍冷藏庫', 80, 280, 960, 640, '120,190,255'], ['爐台烹飪區', 1080, 280, 1440, 640, '255,140,60'], ['洗碗備餐區', 80, 950, 2440, 450, '140,220,200'], ['食材倉庫', 80, 1430, 1060, 430, '255,200,90'], ['出菜口', 1180, 1430, 1340, 430, '200,160,255']],
+        obs: [{ k: 'kfreezer', x: 300, y: 520, w: 260, h: 284 }, { k: 'kfreezer', x: 740, y: 520, w: 260, h: 284 }, { k: 'kstove', x: 1320, y: 520, w: 260, h: 316 }, { k: 'kstove', x: 1800, y: 520, w: 260, h: 316 }, { k: 'ksoup', x: 2270, y: 520, w: 200, h: 295 }, { k: 'kpallet', x: 520, y: 900, w: 270, h: 274 }, { k: 'ksteel', x: 1500, y: 900, w: 300, h: 262 }, { k: 'ksteel', x: 2020, y: 900, w: 300, h: 262 }, { k: 'ksink', x: 330, y: 1230, w: 300, h: 264 }, { k: 'kdish', x: 800, y: 1230, w: 300, h: 274 }, { k: 'kcart', x: 1270, y: 1230, w: 230, h: 274 }, { k: 'ksteel', x: 1740, y: 1230, w: 300, h: 262 }, { k: 'ksink', x: 2230, y: 1230, w: 300, h: 264 }, { k: 'kpallet', x: 300, y: 1680, w: 270, h: 274 }, { k: 'kpallet', x: 760, y: 1680, w: 270, h: 274 }, { k: 'kcart', x: 1900, y: 1680, w: 230, h: 274 }, { k: 'ksteel', x: 2350, y: 1680, w: 300, h: 262 }],
+        items: [['cape', 560, 1450], ['camera', 1560, 1085], ['radio', 2480, 700]],
+        chests: [[958, 822], [1347, 1305], [1741, 704], [2337, 1291], [558, 1778], [509, 524], [2081, 1747], [183, 821]],
+      },
       waves: { rate: 2.3, grow: 2.2, cap: 190, mix: [['pumpkin', 10, 0], ['bat', 4, 0], ['ghost', 3, 30], ['mummy', 2, 60]], horde: 40, hordeN: 34 } },
-    { name: '櫃台那一棟', sub: '怪越來越多', story: 'l4', wait: 10,
+    { name: '舞台主場與 VIP 包廂', sub: '上樓梯到 VIP 包廂', story: 'l4', wait: 10,
       rooms: ['office hall class lab library', 'class music hall library hall', 'hall lab class hall nurse', 'library hall nurse class music', 'hall class gym hall lab'],
       ladders: [[0, 0.5], [0, 4.5], [1, 2.5], [2, 0.5], [2, 4.5], [3, 2.5]],
-      items: [['lolli', 1, 4.5], ['cookie', 3, 0.5], ['lights', 2, 2.5]], chests: [[1, 0.5], [3, 3.5], [4, 4.5]],
+      items: [['lolli', 1, 4.5], ['cookie', 3, 0.5], ['lights', 2, 2.5]], chests: [[1, 0.5], [3, 3.5], [4, 4.5], [0, 1.5], [2, 3.5], [4, 3.5]],
       start: [0, 2.5], exit: [4, 0.5], npc: 'zhang', boss: { k: 'b4', at: 'chase' },
+      flat: {
+        W: 2600, H: 1900, start: [1300, 1700], exit: [1305, 480], floor: 'floor-hall',
+        floors: [['floor-vip', 80, 280, 2440, 660]],
+        decor: [['sstairs', 1305, 965, 300, 310]],
+        zones: [['VIP 包廂層', 80, 280, 2440, 660, '255,120,120'], ['大舞台', 80, 980, 1220, 880, '255,200,90'], ['宴客區', 1340, 980, 1180, 880, '200,160,255']],
+        obs: [{ k: 'sscreen', x: 290, y: 950, w: 460, h: 312, col: 0.22 }, { k: 'sscreen', x: 640, y: 950, w: 460, h: 312, col: 0.22 }, { k: 'sscreen', x: 960, y: 950, w: 460, h: 312, col: 0.22 }, { k: 'sscreen', x: 1650, y: 950, w: 460, h: 312, col: 0.22 }, { k: 'sscreen', x: 2010, y: 950, w: 460, h: 312, col: 0.22 }, { k: 'sscreen', x: 2370, y: 950, w: 460, h: 312, col: 0.22 }, { k: 'svtable', x: 330, y: 700, w: 300, h: 243 }, { k: 'splant', x: 700, y: 560, w: 190, h: 242 }, { k: 'ssofa', x: 1750, y: 640, w: 280, h: 278 }, { k: 'svtable', x: 2200, y: 740, w: 300, h: 243 }, { k: 'splant', x: 2470, y: 500, w: 190, h: 242 }, { k: 'sstage', x: 700, y: 1560, w: 600, h: 468 }, { k: 'sspeaker', x: 280, y: 1470, w: 150, h: 277 }, { k: 'sspeaker', x: 1120, y: 1470, w: 150, h: 277 }, { k: 'sled', x: 230, y: 1250, w: 150, h: 280 }, { k: 'svtable', x: 1800, y: 1350, w: 300, h: 243 }, { k: 'svtable', x: 2300, y: 1350, w: 300, h: 243 }, { k: 'svtable', x: 1850, y: 1730, w: 300, h: 243 }, { k: 'splant', x: 2450, y: 1700, w: 190, h: 242 }, { k: 'sled', x: 1420, y: 1230, w: 150, h: 280 }],
+        items: [['lolli', 1000, 500], ['cookie', 2100, 1560], ['lights', 150, 1560]],
+        chests: [[1196, 1064], [341, 1779], [1560, 1379], [759, 1741], [2075, 1156], [2092, 405], [264, 386], [2363, 1765]],
+      },
       waves: { rate: 2.7, grow: 2.5, cap: 210, mix: [['pumpkin', 10, 0], ['bat', 5, 0], ['ghost', 4, 20], ['mummy', 3, 45]], horde: 38, hordeN: 40 } },
-    { name: '頂樓露台尾牙', sub: '大龍蝦王出現了', story: 'l5', wait: 10, boss: { k: 'boss', at: 'chase' },
+    { name: '宴會大廳', sub: '大龍蝦王出現了', story: 'l5', wait: 10, boss: { k: 'boss', at: 'chase' },
       rooms: ['roof roof roof roof roof', 'class hall music library hall', 'lab class hall office class', 'hall library class nurse music', 'gym hall lab hall class'],
       ladders: [[0, 2.5], [1, 0.5], [1, 4.5], [2, 2.5], [3, 0.5], [3, 4.5]],
-      items: [['banner', 3, 2.5], ['ears', 2, 0.5], ['trophy', 1, 4.5]], chests: [[1, 2.5], [2, 4.5], [3, 1.5]],
+      items: [['banner', 3, 2.5], ['ears', 2, 0.5], ['trophy', 1, 4.5]], chests: [[1, 2.5], [2, 4.5], [3, 1.5], [0, 3.5], [2, 3.5], [4, 1.5], [1, 3.5]],
       start: [0, 0.5], exit: [4, 2.5], npc: 'both',
+      flat: {
+        W: 2600, H: 1900, start: [1300, 1700], exit: [1300, 900], floor: 'floor-banquet',
+        floors: [['floor-aisle', 1150, 900, 300, 960]],
+        zones: [['主舞台', 80, 280, 2440, 640, '255,150,60'], ['宴客區', 80, 960, 2440, 700, '255,120,120'], ['自助餐區', 80, 1680, 2440, 180, '120,220,160']],
+        obs: [{ k: 'sstage', x: 1300, y: 600, w: 600, h: 468 }, { k: 'bpillar', x: 760, y: 520, w: 110, h: 280 }, { k: 'bpillar', x: 1840, y: 520, w: 110, h: 280 }, { k: 'bice', x: 930, y: 840, w: 210, h: 282 }, { k: 'bice', x: 1670, y: 840, w: 210, h: 282 }, { k: 'btower', x: 230, y: 720, w: 230, h: 290 }, { k: 'bprize', x: 2370, y: 720, w: 300, h: 268 }, { k: 'bbtable', x: 420, y: 1050, w: 340, h: 303 }, { k: 'bbtable', x: 920, y: 1050, w: 340, h: 303 }, { k: 'bbtable', x: 420, y: 1480, w: 340, h: 303 }, { k: 'bbtable', x: 920, y: 1480, w: 340, h: 303 }, { k: 'bbtable', x: 1680, y: 1050, w: 340, h: 303 }, { k: 'bbtable', x: 2180, y: 1050, w: 340, h: 303 }, { k: 'bbtable', x: 1680, y: 1480, w: 340, h: 303 }, { k: 'bbtable', x: 2180, y: 1480, w: 340, h: 303 }, { k: 'barch', x: 1060, y: 1300, w: 240, h: 266 }, { k: 'barch', x: 1540, y: 1300, w: 240, h: 266 }, { k: 'bbuffet', x: 400, y: 1780, w: 460, h: 300 }, { k: 'bbuffet', x: 2200, y: 1780, w: 460, h: 300 }, { k: 'blamp', x: 150, y: 1100, w: 80, h: 265 }, { k: 'blamp', x: 2450, y: 1100, w: 80, h: 265 }, { k: 'blamp', x: 150, y: 1500, w: 80, h: 265 }, { k: 'blamp', x: 2450, y: 1500, w: 80, h: 265 }],
+        items: [['banner', 480, 560], ['ears', 1000, 1700], ['trophy', 2050, 700]],
+        chests: [[757, 1548], [2026, 344], [901, 335], [1320, 1286], [1725, 1601], [1939, 1081], [665, 1121], [172, 354]],
+      },
       waves: { rate: 3.0, grow: 2.8, cap: 220, mix: [['pumpkin', 10, 0], ['bat', 5, 0], ['ghost', 4, 0], ['mummy', 4, 30]], horde: 36, hordeN: 46 } },
   ];
 
@@ -239,16 +288,18 @@
     l5: {
       bossIn: [['b5', '吾乃尾牙之王，今晚無人能吃到我。'], ['bian', '你戴著皇冠，是要被吃的那隻吧？'], ['b5', '……大膽！你可知道我一頓飯，要熬幾個鐘頭？'], ['bian', '我只想吃尾牙。']],
       bossOut: [['b5', '吾……今晚，只能當一道菜了。'], ['zhang', '各位同仁，老闆說幾句話就好——'], ['bian', '老闆，我可以吃尾牙了嗎？']],
-      intro: [['tu', '尾牙布條、財神帽，還有特獎大紅包，拿上來就能開席了！'], ['zhang', '露台上好像有隻很大的龍蝦，老闆覺得不太對勁……'], ['bian', '那隻龍蝦戴著皇冠。'], ['tu', '小六加油！打倒大龍蝦王，我們在露台等你～']],
+      intro: [['tu', '尾牙布條、財神帽，還有特獎大紅包，拿上來就能開席了！'], ['zhang', '宴會廳裡好像有隻很大的龍蝦，老闆覺得不太對勁……'], ['bian', '那隻龍蝦戴著皇冠。'], ['tu', '小六加油！打倒大龍蝦王，我們在露台等你～']],
       outro: [['tu', '每一桌都敬完了，還站得穩！所有挑戰全部通過，尾牙正式開席～'], ['zhang', '各位同仁，老闆說幾句話就好——'], ['bian', '老闆，我可以吃尾牙了嗎？'], ['zhang', '開動！']] },
   };
 
   // 晉升時換夥伴：被換掉的夥伴留下的話
   const DISCARD = {
     tu: [['tu', '你要把我換掉？我才是幫你填報修單、申請加班費的人欸！'], ['bian', '報修單到現在都沒有下文啊……'], ['tu', '那是設備科的問題！算了，我回總務室，順便把你的下班打卡單冰在抽屜。'], ['bian', '等等，打卡單不能冰！']],
+    hr: [['hr', '你要把我換掉？我可是掌握你考績的人欸！'], ['bian', '……那我換你好像不太妙。'], ['hr', '放心，我只是去面談下一位。']],
+    wk: [['wk', '你要換掉我？我剛把你的砲台保養好欸！'], ['bian', '保養費我已經報帳了……'], ['wk', '那是設備科預算，要下個月才核准。'], ['bian', '又是下個月！']],
     zhang: [['zhang', '什麼？換掉我？老闆說幾句話就好——'], ['bian', '好，請說。'], ['zhang', '……我忘記要說什麼了。'], ['bian', '沒關係，老闆辛苦了，尾牙見。'], ['zhang', '對了，那個尾牙影片，做好了嗎？']],
   };
-  const NAMES = { bian: '小六', tu: '總務阿兔', zhang: '老闆', b1: '機械手臂王', b2: 'NG 輪圈怪', b3: '廚房大總管', b4: '銘謝惠顧王', b5: '大龍蝦王' };
+  const NAMES = { hr: '人資', wk: '維修人員', bian: '小六', tu: '總務阿兔', zhang: '老闆', b1: '機械手臂王', b2: 'NG 輪圈怪', b3: '廚房大總管', b4: '銘謝惠顧王', b5: '大龍蝦王' };
 
-  G.DATA = { applySkin, get skin() { return DATA_SKIN.skin; }, CHEST_ICON_F: 206, ROOM, PLAYER, needXp, MONS, SKILLS, MAXLV, PROMO_LV, JOBS, PARTNERS, PARTNER_MAX, DISCARD, HARD, EASY, MAXW, RARE, HERO_LINES, ITEMS, CHEST_ICON, LEVELS, STORY, NAMES };
+  G.DATA = { JOB_AFF, applySkin, get skin() { return DATA_SKIN.skin; }, CHEST_ICON_F: 206, ROOM, PLAYER, needXp, MONS, SKILLS, MAXLV, PROMO_LV, JOBS, PARTNERS, PARTNER_MAX, DISCARD, HARD, EASY, MAXW, RARE, HERO_LINES, ITEMS, CHEST_ICON, LEVELS, STORY, NAMES };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -1,7 +1,7 @@
 // 3D 角色：工人（玩家，男／女）、總務阿兔與老闆（只在劇情和撤離點出現）、打怪超人（自製幾何角色，見 chars.js）
 // 用一個小的 WebGL 畫布輪流畫每個角色，再貼到 2D 主畫面上（2D 畫面負責校舍、怪物、特效）
 import * as THREE from 'three';
-import { makeChar, makeRigChar, updateChar, actChar, stopChar } from './chars.js?v=70';
+import { makeChar, makeRigChar, updateChar, actChar, stopChar } from './chars.js?v=92';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const SZ = 256;
@@ -11,9 +11,9 @@ let R = null, scene, cam, ready = false;
 const A = {};
 const MAP_BASE = {};   // 各角色原始貼圖（換裝用）
 let tint = null, tg = null;
-let PK = 'bian';   // 玩家用哪個角色：bian 男、bianF 女
+let PK = 'bian', PKB = 'bian';   // 玩家用哪個角色：bian 男工人、bianF 女；選人資角色時改用年輕男生（hrp）
 const P = (k) => (k === 'bian' ? PK : k === 'workerM' ? 'bian' : k === 'workerF' ? 'bianF' : k);   // workerM/workerF：結尾合照指定男女工人
-export function setPlayer(g) { PK = g === 'f' ? 'bianF' : 'bian'; }
+export function setPlayer(g) { PKB = g === 'f' ? 'bianF' : 'bian'; PK = PKB; }
 
 export async function init(tick = () => {}) {
   R = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true, powerPreference: 'low-power' });
@@ -28,14 +28,14 @@ export async function init(tick = () => {}) {
   cam.position.set(0, 0, 8); cam.lookAt(0, 0, 0);
   tint = document.createElement('canvas'); tint.width = tint.height = SZ; tg = tint.getContext('2d');
   // 五個角色都優先用 Hunyuan3D 生成、自動綁骨的 3D 模型（models/*.glb），讀不到就用程式拼的角色
-  const FILES = { bian: 'worker-male', bianF: 'worker-female', tu: 'rabbit', zhang: 'boss', needle: 'hero' }, GEO = {}, MAP = {};
+  const FILES = { bian: 'worker-male', bianF: 'worker-female', tu: 'rabbit', zhang: 'boss', needle: 'hero', hrp: 'hr-man', mtp: 'mt-man' }, GEO = {}, MAP = {};
   await Promise.all(Object.entries(FILES).map(async ([k, f]) => {
-    try { const g = await new GLTFLoader().loadAsync(`models/${f}.glb?v=9`); g.scene.traverse((o) => { if (o.isMesh && !GEO[k]) { GEO[k] = o.geometry; MAP[k] = o.material && o.material.map; MAP_BASE[k] = MAP[k]; } }); } catch (e) { console.warn(f + '.glb not loaded', e); }
+    try { const g = await new GLTFLoader().loadAsync(`models/${f}.glb?v=16`); g.scene.traverse((o) => { if (o.isMesh && !GEO[k]) { GEO[k] = o.geometry; MAP[k] = o.material && o.material.map; MAP_BASE[k] = MAP[k]; } }); } catch (e) { console.warn(f + '.glb not loaded', e); }
   }));
   // tuN＝護士兔（總務變身）：同一隻兔子的模型，貼圖把粉紅裙子換成護士藍白，頭上加護士帽
   if (GEO.tu && MAP.tu && MAP.tu.image) { GEO.tuN = GEO.tu; MAP.tuN = nurseTex(MAP.tu); }
-  // bian＝男工人、bianF＝女工人、tu＝總務阿兔、zhang＝老闆、needle＝打怪超人、tuN＝護士兔
-  for (const [k, kind] of [['bian', 'workerM'], ['bianF', 'workerF'], ['tu', 'tu'], ['zhang', 'zhang'], ['needle', 'needle'], ['tuN', 'tu']]) {
+  // bian＝男工人、tu＝總務阿兔、zhang＝老闆、needle＝打怪超人、tuN＝護士兔、mtp＝維修人員、hrp＝人資
+  for (const [k, kind] of [['bian', 'workerM'], ['bianF', 'workerF'], ['tu', 'tu'], ['zhang', 'zhang'], ['needle', 'needle'], ['tuN', 'tu'], ['mtp', 'mtman'], ['hrp', 'hrman']]) {
     let a = null;
     if (GEO[k]) { try { a = makeRigChar(GEO[k], kind, MAP[k] || null); } catch (e) { console.warn('rig failed', k, e); } }
     if (!a) a = makeChar(kind);
@@ -83,7 +83,7 @@ const OUTFIT = {
     { helm: [0, 0.03, 1.3], vest: [0, 0.0, 0.3], tie: 0xf2b705, arm: 0xf2b705 }],        // 人資主管：白帽、深灰西裝背心、金領帶、金臂章
   mt: [null,
     { helm: [215, 0.85, 0.95], vest: [52, 0.9, 1.05] },    // 維修技師：藍帽、黃背心
-    { helm: [225, 0.9, 0.62], vest: [26, 1.0, 1.0], arm: 0x1e88e5 },   // 維修組長：深藍帽、橘背心、藍臂章
+    { helm: [225, 0.9, 0.62], vest: [26, 1.0, 1.0], arm: 0xf57c00 },   // 維修組長：深藍帽、橘背心、橘臂章（和青綠工作服的橘色反光條同色）
     { helm: [0, 0.05, 0.72], vest: [172, 0.9, 0.95], arm: 0xf2b705 }],  // 維修課長：銀灰帽、青綠背心、金臂章
 };
 const OUT_TEX = {};
@@ -106,6 +106,39 @@ function recolor(img, o) {
   g.putImageData(id, 0, 0); return c;
 }
 
+// 人資／維修年輕人：每一階換不同衣服（把貼圖裡的襯衫、領帶、工作服、反光條重新上色）
+const MAN_TIERS = {
+  hr: [null,
+    null,                                                                           // 人資助理：白襯衫＋藍領帶（原樣）
+    { body: [170, 186, 208], tie: [140, 72, 190] },                                // 人資專員：淺灰藍襯衫＋紫領帶
+    { body: [42, 46, 60], tie: [236, 186, 46] }],                                  // 人資主管：深色西裝＋金領帶
+  mt: [null,
+    null,                                                                           // 維修技師：藍色工作服＋黃綠反光條（原樣）
+    { body: [28, 112, 104], stripe: [250, 140, 30] },                               // 維修組長：青綠工作服＋橘色反光條
+    { body: [48, 50, 60], stripe: [238, 188, 44] }],                                // 維修課長：黑灰工作服＋金色反光條
+};
+const MAN_TEX = {};
+function recolorMan(img, job, spec) {
+  const w = img.width, h = img.height, c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'); g.drawImage(img, 0, 0); const id = g.getImageData(0, 0, w, h), d = id.data;
+  const sy = h / 1536;   // 概念圖高 1536，貼圖可能被縮放
+  for (let i = 0; i < d.length; i += 4) {
+    const px = (i >> 2) % w, py = Math.floor((i >> 2) / w);
+    const r = d[i], gg = d[i + 1], b = d[i + 2], mx = Math.max(r, gg, b), mn = Math.min(r, gg, b), lum = (r + gg + b) / 765;
+    let out = null;
+    if (job === 'hr') {
+      if (py < 410 * sy || py > 800 * sy || px < 180 || px > 840) continue;   // 只改身體（襯衫到腰帶）
+      if (b > r + 55 && b > gg + 30 && px > 400 && px < 620) out = spec.tie.map((v) => v * Math.min(1.25, b / 170));   // 領帶（以及藍色掛繩）
+      else if (mn > 125 && mx - mn < 48) out = spec.body.map((v) => v * Math.min(1.3, 0.35 + lum * 0.85));            // 襯衫
+    } else if (job === 'mt') {
+      if (py < 30 * sy) continue;
+      if (gg > 165 && r > 120 && b < 120 && gg > b + 60) out = spec.stripe.map((v) => v * Math.min(1.1, 0.7 + lum * 0.4));   // 反光條
+      else if (b > r + 28 && b > gg + 8 && lum < 0.62) out = spec.body.map((v) => v * Math.min(1.5, lum / 0.27));         // 工作服＋帽子
+    }
+    if (out) { d[i] = Math.min(255, out[0]); d[i + 1] = Math.min(255, out[1]); d[i + 2] = Math.min(255, out[2]); }
+  }
+  g.putImageData(id, 0, 0); return c;
+}
 // 領帶＋工作證（人資）：掛在身體骨頭上，跟著動
 function setTie(a, color) {
   if (!a || !a.rig) return;
@@ -136,6 +169,7 @@ function setArmband(a, on, color = 0xd32020) {
 }
 // 主角（男工人）換裝；回傳 true 表示有換
 export function setOutfit(job, tier, k = 'bian') {
+  if (k === 'bian') { const own = job === 'hr' ? 'hrp' : job === 'mt' ? 'mtp' : null; PK = own || PKB; if (own) { const a0 = A[own]; if (a0 && a0.rig) { const spec = MAN_TIERS[job] && MAN_TIERS[job][tier], base0 = MAP_BASE[own]; let tx = base0; if (spec && base0 && base0.image) { const ck = own + tier; if (!MAN_TEX[ck]) { const t0 = new THREE.CanvasTexture(recolorMan(base0.image, job, spec)); t0.flipY = base0.flipY; t0.colorSpace = base0.colorSpace; t0.anisotropy = base0.anisotropy; MAN_TEX[ck] = t0; } tx = MAN_TEX[ck]; } if (tx) { a0.rig.mesh.material.map = tx; a0.rig.mesh.material.needsUpdate = true; } const arm = job === 'hr' ? (tier === 2 ? 0x8e24aa : tier >= 3 ? 0xf2b705 : 0) : (tier === 2 ? 0x1e88e5 : tier >= 3 ? 0xf2b705 : 0); setArmband(a0, !!arm, arm || undefined); } curOutfit = job + tier; return true; } }   // 人資、維修：年輕男生角色（有臉），只用臂章區分階級
   const a = A[P(k)]; if (!a || !a.rig || !MAP_BASE[P(k)]) return false;
   const key = (job || '') + tier;
   if (key === curOutfit && k === 'bian') return true;

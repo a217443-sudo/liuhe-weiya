@@ -29,7 +29,7 @@
       exit: { ...at(L.exit), open: false, wait: L.wait, left: L.wait, inRoom: false },
       mons: [], shots: [], bombs: [], pools: [], gems: [], fx: [], beams: [], bolts: [], balls: [], tacks: [], clouds: [], rings: [], waves: [], dia: null,
       sk: { candy: 1 }, tm: {}, buddies: [], offer: null, pending: 0, chestPick: 0,
-      job: { id: null, tier: 0 }, partners: [], nurse: null, hua: null, syringes: [], hz: [], zones: [], partnerOffer: null, traps: [], turrets: [], promoDone: 0, promoPend: 0, promoOffer: null, sawHit: new Map(),
+      job: { id: null, tier: 0 }, partners: [], nurse: null, wk: null, hrp: null, pTurrets: [], syringes: [], hz: [], zones: [], partnerOffer: null, traps: [], turrets: [], promoDone: 0, promoPend: 0, promoOffer: null, sawHit: new Map(),
       spawnAcc: 0, hordeT: L.waves.horde, kills: 0, bossSpawned: false, boss: null, nid: 1,
     };
     S.rng = mkRng(S);
@@ -38,8 +38,82 @@
       shield: 0, shieldT: 0, hurtT: 0, inv: 0, moving: 0, vx: 0, glowA: 0, sawA: 0 };
     S.p.need = need(S, 1);
     S.chestPick = 1 + li;   // 開場先選武器（後面的關卡多送幾張，怪也比較強）
+    if (L.flat) initFlat(S, L);
     updCam(S, 1);
     return S;
+  }
+
+  // ---------- 平面（俯視）地圖：一整張大地圖，沒有樓層、梯子 ----------
+  // 地圖資料在關卡的 flat：W、H、obs（障礙物：種類 k、中心 x、底部 y、畫的寬 w、高 h）、items、chests、start、exit
+  function initFlat(S, L) {
+    const fl = L.flat;
+    S.flat = true; S.Wt = fl.W; S.Ht = fl.H; S.F = 1; S.C = 1; S.rooms = [['x']]; S.ladders = [];
+    S.obs = fl.obs.map((o) => ({ ...o, cx0: o.x - o.w * 0.46, cx1: o.x + o.w * 0.46, cy0: o.y - o.h * (o.col ?? 0.4), cy1: o.y }));
+    S.items = fl.items.map(([k, x, y]) => ({ k, x, y, f: 0, got: false, prog: 0 }));
+    S.chests = fl.chests.map(([x, y]) => ({ x, y, f: 0, open: false }));
+    S.exit = { x: fl.exit[0], y: fl.exit[1], f: 0, open: false, wait: L.wait, left: L.wait, inRoom: false };
+    S.p.x = fl.start[0]; S.p.y = fl.start[1]; S.p.f = 0;
+    S.cam.x = S.p.x; S.cam.y = S.p.y;
+  }
+  // 圓（半徑 r）會不會撞到障礙物或出界
+  function flatBlocked(S, x, y, r) {
+    if (x < r || x > S.Wt - r || y < r || y > S.Ht - r) return true;
+    for (const o of S.obs) {
+      const nx = Math.max(o.cx0, Math.min(o.cx1, x)), ny = Math.max(o.cy0, Math.min(o.cy1, y));
+      const dx = x - nx, dy = y - ny; if (dx * dx + dy * dy < r * r) return true;
+    }
+    return false;
+  }
+  // 沿著障礙物滑動的移動（先走 x 再走 y）
+  function flatMove(S, e, dx, dy, r) {
+    if (!flatBlocked(S, e.x + dx, e.y, r)) e.x += dx;
+    if (!flatBlocked(S, e.x, e.y + dy, r)) e.y += dy;
+  }
+  // 找一個沒被擋住的點
+  function flatFree(S, x, y, r) {
+    for (let i = 0; i < 24; i++) { const a = i * 0.9, d = i * 9; const px = Math.max(r, Math.min(S.Wt - r, x + Math.cos(a) * d)), py = Math.max(r, Math.min(S.Ht - r, y + Math.sin(a) * d)); if (!flatBlocked(S, px, py, r)) return { x: px, y: py }; }
+    return { x, y };
+  }
+
+  // 平面地圖的繞路：地面怪遇到機台不能卡住，要繞過去抓主角。把地圖切成 50px 方格，從主角所在格子往外算每格離主角幾步（廣度優先），怪沿著步數變小的方向走
+  const FC = 50;
+  function flatLineClear(S, x0, y0, x1, y1, r) {
+    const d = Math.hypot(x1 - x0, y1 - y0), n = Math.min(14, Math.ceil(d / 40));
+    for (let i = 1; i <= n; i++) { const t = i / n; if (flatBlocked(S, x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, r)) return false; }
+    return true;
+  }
+  function flowUpdate(S) {
+    let F = S.flow;
+    if (!F) {
+      const gw = Math.ceil(S.Wt / FC), gh = Math.ceil(S.Ht / FC), blk = new Uint8Array(gw * gh);
+      for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) blk[j * gw + i] = flatBlocked(S, (i + 0.5) * FC, (j + 0.5) * FC, 30) ? 1 : 0;
+      F = S.flow = { gw, gh, blk, dist: new Int16Array(gw * gh), pc: -1, t: -9 };
+    }
+    const pi = Math.max(0, Math.min(F.gw - 1, Math.floor(S.p.x / FC))), pj = Math.max(0, Math.min(F.gh - 1, Math.floor(S.p.y / FC))), pc = pj * F.gw + pi;
+    if (F.pc === pc && S.t - F.t < 0.6) return F;
+    F.pc = pc; F.t = S.t; F.dist.fill(32767); F.dist[pc] = 0;
+    const q = [pc]; let h = 0;
+    while (h < q.length) {
+      const c = q[h++], ci = c % F.gw, cj = (c - ci) / F.gw, dc = F.dist[c];
+      for (let k = 0; k < 8; k++) {
+        const dx = k === 0 ? 1 : k === 1 ? -1 : k === 2 ? 0 : k === 3 ? 0 : k === 4 ? 1 : k === 5 ? 1 : k === 6 ? -1 : -1, dy = k === 0 ? 0 : k === 1 ? 0 : k === 2 ? 1 : k === 3 ? -1 : k === 4 ? 1 : k === 5 ? -1 : k === 6 ? 1 : -1;
+        const ni = ci + dx, nj = cj + dy; if (ni < 0 || nj < 0 || ni >= F.gw || nj >= F.gh) continue;
+        const nc = nj * F.gw + ni; if (F.blk[nc] || F.dist[nc] <= dc + 1) continue;
+        if (dx && dy && (F.blk[cj * F.gw + ni] || F.blk[nj * F.gw + ci])) continue;   // 不切角
+        F.dist[nc] = dc + 1; q.push(nc);
+      }
+    }
+    return F;
+  }
+  // 從 (x,y) 往主角走的下一個中繼點（找不到就回 null＝直接朝主角）
+  function flowStep(S, x, y) {
+    const F = flowUpdate(S), ci = Math.max(0, Math.min(F.gw - 1, Math.floor(x / FC))), cj = Math.max(0, Math.min(F.gh - 1, Math.floor(y / FC)));
+    let best = null, bd = F.dist[cj * F.gw + ci];
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      if (!di && !dj) continue; const ni = ci + di, nj = cj + dj; if (ni < 0 || nj < 0 || ni >= F.gw || nj >= F.gh) continue;
+      const d = F.dist[nj * F.gw + ni]; if (d < bd) { bd = d; best = { x: (ni + 0.5) * FC, y: (nj + 0.5) * FC }; }
+    }
+    return best;
   }
 
   // 升到下一級要幾顆糖（困難版比較多）
@@ -49,11 +123,18 @@
   // 技能目前等級的數值
   const sv = (S, k) => S.sk[k] ? D.SKILLS[k].lv[S.sk[k] - 1] : null;
   const cdMul = (S) => sv(S, 'clock')?.m ?? 1;
+  const pm = (S) => 1 + 0.2 * (S.pBoost || 0);   // 夥伴強化：每級 +20% 傷害／治療
   const spdMul = (S) => (sv(S, 'shoe')?.m ?? 1) * (1 + 0.05 * (S.selfLv || 0));
 
   // ---------- 鏡頭（生怪要知道哪裡在畫面外） ----------
   function updCam(S, k) {
     const p = S.p, v = S.view, c = S.cam;
+    if (S.flat) {
+      let fx = p.x, fy = p.y - 20 + (S.camDy || 0);
+      fx = v.w >= S.Wt ? S.Wt / 2 : Math.max(v.w / 2, Math.min(S.Wt - v.w / 2, fx));
+      fy = v.h >= S.Ht ? S.Ht / 2 : Math.max(v.h / 2, Math.min(S.Ht - v.h / 2, fy));
+      c.x += (fx - c.x) * k; c.y += (fy - c.y) * k; return;
+    }
     let tx = p.x, ty = p.y - 60 + (S.camDy || 0);   // camDy：劇情時鏡頭往下移，人物在畫面上半、對話框不擋人
     const minX = v.w / 2 - 140, maxX = S.Wt - v.w / 2 + 140;
     tx = minX > maxX ? S.Wt / 2 : Math.max(minX, Math.min(maxX, tx));
@@ -103,14 +184,21 @@
   }
 
   // ---------- 小編 ----------
-  const pc = (S) => S.p.y - 52;   // 身體中心
+  const pc = (S) => (S.flat ? S.p.y : S.p.y - 52);   // 身體中心（平面地圖裡，腳下位置＝身體位置）
   function stepPlayer(S, dt) {
     const p = S.p, inp = S.input, P = D.PLAYER;
     const mag = Math.hypot(inp.x, inp.y);
     const jx = mag > 0.15 ? inp.x : 0, jy = mag > 0.15 ? inp.y : 0;
     const spd = P.spd * spdMul(S) * (p.slowT > 0 ? 0.4 : 1);
     if (p.slowT > 0) p.slowT -= dt;
-    if (p.lad == null) {
+    if (S.flat) {   // 平面：八方向走，碰到障礙物會沿著滑
+      const vx = jx * spd, vy = jy * spd; p.vx = vx; p.vy = vy;
+      let sp = 1;
+      if ((vx || vy) && S.grid) { let n = 0; query(S, p.x + Math.sign(vx) * 22, p.y + Math.sign(vy) * 22, 22, (m) => { if (!m.d.fly && m.stun <= 0) n++; }); if (n) sp = n >= 4 ? 0.35 : 0.6; }
+      flatMove(S, p, vx * sp * dt, vy * sp * dt, D.PLAYER.r);
+      if (Math.abs(jx) > 0.1) p.face = jx > 0 ? 1 : -1;
+      p.moving = Math.hypot(vx, vy) * sp;
+    } else if (p.lad == null) {
       // 想上下樓：靠近梯子、搖桿往上或往下推
       if (Math.abs(jy) > 0.45 && Math.abs(jy) > Math.abs(jx) * 0.55) {
         const up = jy < 0;
@@ -188,6 +276,14 @@
   }
   // 找畫面外、離小編不太遠的地方生怪
   function spawnPoint(S, fly) {
+    if (S.flat) {   // 平面：在畫面外繞一圈的地方，避開障礙物
+      for (let i = 0; i < 16; i++) {
+        const a = S.rng() * 6.283, d = Math.max(S.view.w, S.view.h) * 0.55 + 40 + S.rng() * 220;
+        const x = S.p.x + Math.cos(a) * d, y = S.p.y + Math.sin(a) * d;
+        if (x > 40 && x < S.Wt - 40 && y > 40 && y < S.Ht - 40 && !flatBlocked(S, x, y, 26)) return { x, y, f: 0 };
+      }
+      return { x: S.rng() < 0.5 ? 60 : S.Wt - 60, y: 60 + S.rng() * (S.Ht - 120), f: 0 };
+    }
     const pf = pFloor(S);
     // 六成生在同一層、剛好在畫面外（一群一群從左右衝進來）
     if (S.rng() < 0.6) {
@@ -237,6 +333,12 @@
   function horde(S, n, label) {
     n = Math.min(n, Math.max(0, Math.round(capOf(S)) - S.mons.length));
     if (!n && !label) return;
+    if (S.flat) {   // 平面：從畫面外一個方向整群湧進來
+      const sp = spawnPoint(S, false);
+      for (let i = 0; i < n; i++) { const q = flatFree(S, sp.x + (S.rng() - 0.5) * 220, sp.y + (S.rng() - 0.5) * 220, 24); const m = spawn(S, i % 7 === 6 && S.t > 60 ? 'mummy' : 'pumpkin', q.x, q.y, 0); m.stun = i * 0.04; }
+      S.ev.push({ k: 'horde', side: sp.x < S.p.x ? 'left' : 'right', label });
+      return;
+    }
     const pf = pFloor(S);
     const side = S.p.x > S.Wt / 2 ? -1 : 1;   // 從比較遠的那邊來
     let x = side < 0 ? 20 : S.Wt - 20;
@@ -250,21 +352,30 @@
 
   // 第 1 關 Boss：失控機械手臂王。每隔幾秒舉起手臂預告（紅圈），重拳砸地震波傷到圈內的人；血量剩一半時叫一群毛邊怪
   function stepArmBoss(S, m, dt) {
-    const a = m.ai || (m.ai = { t: 3, ph: 'idle', hold: false, sum: false }), p = S.p;
+    const a = m.ai || (m.ai = { t: 2.2, ph: 'idle', hold: false, sum: false, sum2: false, cnt: 0 }), p = S.p;
     a.t -= dt; a.hit = Math.max(0, (a.hit || 0) - dt);
+    const rk = a.rage ? 0.7 : 1;
     if (a.ph === 'idle' && a.t <= 0) {
-      a.ph = 'wind'; a.t = 1.0; a.hold = true;
-      S.fx.push({ k: 'slamWarn', x: m.x, y: m.y + m.r * 0.7, r: 300, t: 0, dur: 1.0 }); S.ev.push({ k: 'armWind' });
+      if (a.cnt % 3 === 2) {   // 每三招有一次「丟螺絲」：先預告一條紅線，再朝那個方向丟出螺絲
+        a.ph = 'swwind'; a.t = 0.85; a.hold = true; a.ang0 = Math.atan2(p.y - m.y, p.x - m.x);
+        S.fx.push({ k: 'sweepWarn', x: m.x, y: m.y, a0: a.ang0, t: 0, dur: 0.85 }); S.ev.push({ k: 'armWind' });
+      } else {
+        a.ph = 'wind'; a.t = 0.95; a.hold = true;
+        S.fx.push({ k: 'slamWarn', x: m.x, y: m.y + m.r * 0.7, r: 340, t: 0, dur: 0.95 }); S.ev.push({ k: 'armWind' });
+      }
     } else if (a.ph === 'wind' && a.t <= 0) {
-      a.ph = 'idle'; a.t = S.hard ? 3.4 : 4.4; a.hold = false; a.hit = 0.35;
-      S.fx.push({ k: 'boom', x: m.x, y: m.y + m.r * 0.7, r: 300, t: 0, dur: 0.5 }); S.ev.push({ k: 'boom' });
-      if (p.lad == null && pFloor(S) === m.f && Math.abs(p.x - m.x) < 300) hurtPlayer(S, S.hard ? 38 : 30, m);
+      a.ph = 'idle'; a.t = (S.hard ? 2.6 : 3.3) * rk; a.hold = false; a.hit = 0.35; a.cnt++;
+      S.fx.push({ k: 'boom', x: m.x, y: m.y + m.r * 0.7, r: 340, t: 0, dur: 0.5 }); S.ev.push({ k: 'boom' });
+      if (p.lad == null && pFloor(S) === m.f && (S.flat ? Math.hypot(p.x - m.x, p.y - m.y) < 340 : Math.abs(p.x - m.x) < 340)) hurtPlayer(S, S.hard ? 44 : 34, m);
+    } else if (a.ph === 'swwind' && a.t <= 0) {   // 丟螺絲：朝預告線的方向扇形射出 3 顆，碰到一顆扣 18（困難 22），可以閃開
+      a.ph = 'idle'; a.t = (S.hard ? 2.2 : 2.8) * rk; a.hold = false; a.hit = 0.3; a.cnt++;
+      const n = a.rage ? 5 : 3;
+      for (let i = 0; i < n; i++) { const ang = a.ang0 + (i - (n - 1) / 2) * 0.26; S.hz.push({ k: 'screw', x: m.x, y: m.y, vx: Math.cos(ang) * 300, vy: Math.sin(ang) * 300, life: 3.4, r: 15, dmg: S.hard ? 22 : 18 }); }
+      S.ev.push({ k: 'shot' }); S.ev.push({ k: 'say', x: m.x, y: m.y - m.r - 60, s: '螺絲飛出去！' });
     }
-    if (!a.sum && m.hp < m.max * 0.5) {
-      a.sum = true;
-      for (let i = 0; i < 8; i++) if (S.mons.length < capOf(S) + 8) spawn(S, 'screw', m.x + (i - 3.5) * 48, m.y - 30, m.f);   // 設備壞掉掉出一堆螺絲怪
-      S.ev.push({ k: 'summon', x: m.x, y: m.y });
-    }
+    // 血量 70%、35% 各叫一批螺絲怪（設備壞掉掉出來的）
+    if (!a.sum && m.hp < m.max * 0.7) { a.sum = true; for (let i = 0; i < 6; i++) if (S.mons.length < capOf(S) + 10) spawn(S, 'screw', m.x + (i - 2.5) * 52, m.y - 30, m.f); S.ev.push({ k: 'summon', x: m.x, y: m.y }); S.ev.push({ k: 'say', x: m.x, y: m.y - m.r - 60, s: '零件掉了！' }); }
+    if (!a.sum2 && m.hp < m.max * 0.35) { a.sum2 = true; for (let i = 0; i < 10; i++) if (S.mons.length < capOf(S) + 12) spawn(S, 'screw', m.x + (i - 4.5) * 46, m.y - 30, m.f); S.ev.push({ k: 'summon', x: m.x, y: m.y }); S.ev.push({ k: 'say', x: m.x, y: m.y - m.r - 60, s: '緊急停機失敗！' }); a.rage = true; }
   }
   // ---------- 第 2、3、4 關 Boss ----------
   const bossMul = (m) => {
@@ -286,12 +397,13 @@
       if (!a.rage && m.hp < m.max * 0.2) { a.rage = true; S.ev.push({ k: 'say', x: m.x, y: m.y - m.r - 60, s: '吾要生氣了！' }); S.ev.push({ k: 'boom', x: m.x, y: m.y }); }
       // 大螯夾擊：舉螯 0.9 秒（前方出現紅圈）→ 夾下去
       if (a.ph === 'idle' && a.t <= 0) {
-        a.ph = 'wind'; a.t = 0.9; a.hold = true; a.cx = m.x + m.face * 120;
-        S.fx.push({ k: 'slamWarn', x: a.cx, y: m.y + m.r * 0.7, r: 240, t: 0, dur: 0.9 }); S.ev.push({ k: 'armWind' });
+        a.ph = 'wind'; a.t = 0.9; a.hold = true; a.cx = m.x + m.face * 120; a.cy = m.y + m.r * 0.7;
+        if (S.flat) { const an = Math.atan2(p.y - m.y, p.x - m.x); a.cx = m.x + Math.cos(an) * 140; a.cy = m.y + Math.sin(an) * 140; }   // 平面：朝主角的方向夾下去
+        S.fx.push({ k: 'slamWarn', x: a.cx, y: a.cy, r: 240, t: 0, dur: 0.9 }); S.ev.push({ k: 'armWind' });
       } else if (a.ph === 'wind' && a.t <= 0) {
         a.ph = 'idle'; a.t = (S.hard ? 3.2 : 4.2) * rageK; a.hold = false; a.hit = 0.35;
-        S.fx.push({ k: 'boom', x: a.cx, y: m.y + m.r * 0.7, r: 240, t: 0, dur: 0.5 }); S.ev.push({ k: 'boom' });
-        if (p.lad == null && pFloor(S) === m.f && Math.abs(p.x - a.cx) < 240) hurtPlayer(S, S.hard ? 46 : 34, m);
+        S.fx.push({ k: 'boom', x: a.cx, y: a.cy, r: 240, t: 0, dur: 0.5 }); S.ev.push({ k: 'boom' });
+        if (p.lad == null && pFloor(S) === m.f && (S.flat ? Math.hypot(p.x - a.cx, p.y - a.cy) < 240 : Math.abs(p.x - a.cx) < 240)) hurtPlayer(S, S.hard ? 46 : 34, m);
       }
       // 吐泡泡：一次 3 顆朝你飛，打到會黏住你、跑變慢
       a.bub = (a.bub ?? 3) - dt;
@@ -304,12 +416,13 @@
     } else if (ai === 'roll') {
       if (a.ph === 'idle' && a.t <= 0) {
         if (pFloor(S) !== m.f) { a.t = 1; }
-        else { a.ph = 'aim'; a.t = 0.9; a.hold = true; a.dir = Math.sign(p.x - m.x) || 1; S.fx.push({ k: 'dashWarn', x: m.x, y: m.y, dir: a.dir, t: 0, dur: 0.9 }); S.ev.push({ k: 'armWind' }); }
-      } else if (a.ph === 'aim' && a.t <= 0) { a.ph = 'dash'; a.t = S.hard ? 1.8 : 1.4; a.dashV = a.dir * 640; a.dmgMul = 1.8; a.hold = false; m.face = a.dir; }
+        else { a.ph = 'aim'; a.t = 0.9; a.hold = true; a.dir = Math.sign(p.x - m.x) || 1; a.ang = Math.atan2(p.y - m.y, p.x - m.x); S.fx.push({ k: 'dashWarn', x: m.x, y: m.y, dir: a.dir, ang: S.flat ? a.ang : null, t: 0, dur: 0.9 }); S.ev.push({ k: 'armWind' }); }
+      } else if (a.ph === 'aim' && a.t <= 0) { a.ph = 'dash'; a.t = S.hard ? 1.8 : 1.4; a.dashV = a.dir * 640; a.dmgMul = 1.8; a.hold = false; m.face = a.dir; if (S.flat) { a.dvx = Math.cos(a.ang) * 600; a.dvy = Math.sin(a.ang) * 600; } }
       else if (a.ph === 'dash') {
-        m.vx = a.dashV;
-        if (m.x <= m.r + 4 || m.x >= S.Wt - m.r - 4) { a.dashV = -a.dashV; m.x = Math.max(m.r + 6, Math.min(S.Wt - m.r - 6, m.x)); S.ev.push({ k: 'boom', x: m.x, y: m.y }); }
-        if (a.t <= 0) { a.ph = 'rest'; a.t = 2.4; a.dashV = null; a.dmgMul = 1; a.hold = true; a.vuln = true; m.vx = 0; }
+        if (S.flat) { /* 平面：衝撞由 stepMons 依 dvx、dvy 移動（可以直接穿過機台）*/ }
+        else m.vx = a.dashV;
+        if (!S.flat && m.x <= m.r + 4 || m.x >= S.Wt - m.r - 4) { a.dashV = -a.dashV; m.x = Math.max(m.r + 6, Math.min(S.Wt - m.r - 6, m.x)); S.ev.push({ k: 'boom', x: m.x, y: m.y }); }
+        if (a.t <= 0) { a.ph = 'rest'; a.t = 2.4; a.dashV = null; a.dvx = null; a.dvy = null; a.dmgMul = 1; a.hold = true; a.vuln = true; m.vx = 0; m.vy = 0; }
       } else if (a.ph === 'rest' && a.t <= 0) { a.ph = 'idle'; a.t = S.hard ? 2.2 : 3; a.hold = false; a.vuln = false; }
       if (!a.sum && m.hp < m.max * 0.5) {
         a.sum = true;
@@ -324,7 +437,7 @@
       else if (a.ph === 'open') {
         if ((a.thrown === 0 && a.t < 3.1) || (a.thrown === 1 && a.t < 1.8)) {
           a.thrown++; a.hit = 0.4;
-          for (let i = 0; i < 3; i++) { const tx = p.x + (i - 1) * 110 + (S.rng() - 0.5) * 60; S.hz.push({ k: 'blob', x0: m.x, y0: m.y - m.r, tx: Math.max(40, Math.min(S.Wt - 40, tx)), ty: floorFy, t: 0, dur: 0.95, r: 72, dmg: S.hard ? 26 : 19 }); }
+          for (let i = 0; i < 3; i++) { const ang = S.rng() * 6.28 + i * 2.1, tx = S.flat ? p.x + (i ? Math.cos(ang) * 150 : 0) : p.x + (i - 1) * 110 + (S.rng() - 0.5) * 60, ty = S.flat ? Math.max(40, Math.min(S.Ht - 40, p.y + (i ? Math.sin(ang) * 150 : 0))) : floorFy; S.hz.push({ k: 'blob', x0: m.x, y0: m.y - m.r, tx: Math.max(40, Math.min(S.Wt - 40, tx)), ty, t: 0, dur: 0.95, r: 72, dmg: S.hard ? 26 : 19 }); }
           S.ev.push({ k: 'throw' });
         }
         if (a.t <= 0) { a.ph = 'idle'; a.t = S.hard ? 3.2 : 4; a.lid = true; a.hold = false; }
@@ -353,7 +466,7 @@
           a.rainLeft -= dt; a.coinT -= dt;
           if (a.coinT <= 0) {
             a.coinT = 0.32; const fy = floorY(pFloor(S));
-            for (let i = 0; i < 3; i++) { const tx = Math.max(40, Math.min(S.Wt - 40, p.x + (S.rng() - 0.5) * 640)); S.hz.push({ k: 'coin', tx, ty: fy, t: 0, dur: 0.95, r: 46, dmg: S.hard ? 18 : 13 }); }
+            for (let i = 0; i < 3; i++) { const tx = Math.max(40, Math.min(S.Wt - 40, p.x + (S.rng() - 0.5) * 640)), ty = S.flat ? Math.max(40, Math.min(S.Ht - 40, p.y + (S.rng() - 0.5) * 520)) : fy; S.hz.push({ k: 'coin', tx, ty, t: 0, dur: 0.95, r: 46, dmg: S.hard ? 18 : 13 }); }
           }
         }
       }
@@ -367,28 +480,32 @@
       if (h.k === 'blob') {
         if (h.t >= h.dur && !h.done) {
           h.done = true; S.fx.push({ k: 'boom', x: h.tx, y: h.ty - 10, r: h.r * 1.6, t: 0, dur: 0.45 }); S.ev.push({ k: 'boom' });
-          if (p.lad == null && Math.abs(p.x - h.tx) < h.r && Math.abs(p.y - h.ty) < 120) hurtPlayer(S, h.dmg, null);
+          if (p.lad == null && (S.flat ? Math.hypot(p.x - h.tx, p.y - h.ty) < h.r : Math.abs(p.x - h.tx) < h.r && Math.abs(p.y - h.ty) < 120)) hurtPlayer(S, h.dmg, null);
           S.zones.push({ x: h.tx, y: h.ty, r: h.r, life: 5, dps: 7, t: 0, acc: 0 });
         }
       } else if (h.k === 'coin') {   // 撒錢：落地才傷人
         if (h.t >= h.dur && !h.done) {
           h.done = true; S.fx.push({ k: 'pop', x: h.tx, y: h.ty - 20, r: 40, t: 0, dur: 0.3 });
-          if (p.lad == null && Math.abs(p.x - h.tx) < h.r && Math.abs(p.y - h.ty) < 120) hurtPlayer(S, h.dmg, null);
+          if (p.lad == null && (S.flat ? Math.hypot(p.x - h.tx, p.y - h.ty) < h.r : Math.abs(p.x - h.tx) < h.r && Math.abs(p.y - h.ty) < 120)) hurtPlayer(S, h.dmg, null);
         }
       } else if (h.k === 'bubble') {   // 龍蝦吐的泡泡：打到會被黏住變慢
         h.x += h.vx * dt; h.y += h.vy * dt;
-        if (h.t >= h.life || h.x < -40 || h.x > S.Wt + 40) h.done = true;
+        if (h.t >= h.life || h.x < -40 || h.x > S.Wt + 40 || (S.flat && (h.y < -40 || h.y > S.Ht + 40))) h.done = true;
         else { const dx = h.x - p.x, dy = h.y - cy; if (dx * dx + dy * dy < (h.r + 20) ** 2) { hurtPlayer(S, h.dmg, null); p.slowT = 2.5; h.done = true; S.fx.push({ k: 'pop', x: h.x, y: h.y, r: 36, t: 0, dur: 0.3 }); } }
+      } else if (h.k === 'screw') {   // 魔王丟的螺絲：直線飛，打到主角扣一點血
+        h.x += h.vx * dt; h.y += h.vy * dt;
+        if (h.t >= h.life || h.x < -40 || h.x > S.Wt + 40 || h.y < -40 || h.y > S.Ht + 40) h.done = true;
+        else { const dx = h.x - p.x, dy = h.y - cy; if (dx * dx + dy * dy < (h.r + 20) ** 2) { hurtPlayer(S, h.dmg, null); h.done = true; S.fx.push({ k: 'pop', x: h.x, y: h.y, r: 30, t: 0, dur: 0.25 }); } }
       } else if (h.k === 'ball') {
         h.x += h.vx * dt; h.y += h.vy * dt;
-        if (h.t >= h.life || h.x < -40 || h.x > S.Wt + 40) h.done = true;
+        if (h.t >= h.life || h.x < -40 || h.x > S.Wt + 40 || (S.flat && (h.y < -40 || h.y > S.Ht + 40))) h.done = true;
         else { const dx = h.x - p.x, dy = h.y - cy; if (dx * dx + dy * dy < (h.r + 20) ** 2) { hurtPlayer(S, h.dmg, null); h.done = true; S.fx.push({ k: 'pop', x: h.x, y: h.y, r: 30, t: 0, dur: 0.25 }); } }
       }
     }
     S.hz = S.hz.filter((h) => !h.done);
     for (const z of S.zones) {
       z.life -= dt; z.t += dt; z.acc += dt;
-      if (z.acc >= 0.5) { z.acc = 0; if (p.lad == null && Math.abs(p.x - z.x) < z.r && Math.abs(p.y - z.y) < 80) hurtPlayer(S, z.dps / 2 + 1, null); }
+      if (z.acc >= 0.5) { z.acc = 0; if (p.lad == null && (S.flat ? Math.hypot(p.x - z.x, p.y - z.y) < z.r : Math.abs(p.x - z.x) < z.r && Math.abs(p.y - z.y) < 80)) hurtPlayer(S, z.dps / 2 + 1, null); }
     }
     S.zones = S.zones.filter((z) => z.life > 0);
   }
@@ -414,7 +531,31 @@
         m.sumT = (m.sumT ?? 3) - dt;
         if (m.sumT <= 0 && S.mons.length < capOf(S)) { m.sumT = 7; for (let i = 0; i < 3; i++) spawn(S, m.d.summon, m.x + (i - 1) * 60, m.y - 40, m.f); S.ev.push({ k: 'summon', x: m.x, y: m.y }); }
       }
-      if (m.d.fly) {
+      if (S.flat) {   // 平面：直接朝主角走（會飛的不被障礙物擋），地上的碰到障礙物會沿著滑
+        if (m.ai && m.ai.dvx != null) {   // 輪圈怪衝撞：沿著預告方向直衝（穿過機台），撞到地圖邊界就反彈
+          m.x += m.ai.dvx * dt; m.y += m.ai.dvy * dt;
+          if (m.x < m.r || m.x > S.Wt - m.r) { m.ai.dvx = -m.ai.dvx; m.x = Math.max(m.r, Math.min(S.Wt - m.r, m.x)); S.ev.push({ k: 'boom', x: m.x, y: m.y }); }
+          if (m.y < m.r || m.y > S.Ht - m.r) { m.ai.dvy = -m.ai.dvy; m.y = Math.max(m.r, Math.min(S.Ht - m.r, m.y)); S.ev.push({ k: 'boom', x: m.x, y: m.y }); }
+          m.face = m.ai.dvx >= 0 ? 1 : -1; m.f = 0; continue;
+        }
+        const dx = p.x - m.x, dy = p.y - m.y, d = Math.hypot(dx, dy) || 1, stopAt = m.r * 0.6 + 10;
+        // 地面怪：中間隔著機台就繞路（不是卡在機台旁邊）
+        let ux = dx / d, uy = dy / d;
+        if (!m.d.fly) {
+          m.pathT = (m.pathT || 0) - dt;
+          if (m.pathT <= 0) { m.pathT = 0.12 + S.rng() * 0.1; m.wp = (d > 60 && !flatLineClear(S, m.x, m.y, p.x, p.y, m.r * 0.7)) ? flowStep(S, m.x, m.y) : null; }
+          if (m.wp) { const wx = m.wp.x - m.x, wy = m.wp.y - m.y, wd = Math.hypot(wx, wy) || 1; ux = wx / wd; uy = wy / wd; }
+        }
+        const want = d > stopAt ? spd : 0;
+        m.vx += (ux * want - m.vx) * Math.min(1, dt * 6); m.vy += (uy * want - m.vy) * Math.min(1, dt * 6);
+        if (m.d.fly) { m.x += m.vx * dt; m.y += m.vy * dt; } else {
+          const r = m.d.boss ? Math.min(26, m.r * 0.7) : m.r * 0.7;   // Boss 身體大，但走機台之間的縫隙時只算很小的碰撞（可以擠過去、不會卡住）
+          flatMove(S, m, m.vx * dt, m.vy * dt, r);
+          if (flatBlocked(S, m.x, m.y, r)) { const q = flatFree(S, m.x, m.y, r); m.x = q.x; m.y = q.y; }
+        }
+        if (Math.abs(dx) > 6) m.face = dx > 0 ? 1 : -1;
+        m.f = 0; m.y = Math.max(m.r * 0.5, Math.min(S.Ht - m.r * 0.5, m.y));
+      } else if (m.d.fly) {
         // 會飛的：直接飛向小編（蝙蝠繞來繞去、床單鬼慢慢飄）
         const tx = p.x + Math.sin(m.age * 1.7 + m.ph) * (m.k === 'bat' ? 70 : 20), ty = cy + Math.cos(m.age * 2.3 + m.ph) * (m.k === 'bat' ? 50 : 14);
         const dx = tx - m.x, dy = ty - m.y, d = Math.hypot(dx, dy) || 1;
@@ -475,6 +616,17 @@
     }
     // 互推：疊起來的怪往上擠（重力再把牠們拉回來，就會疊成一坨一坨）
     buildGrid(S);
+    if (S.flat) {   // 平面：怪物之間互相推開，不疊在一起
+      for (const m of S.mons) {
+        if (m.dead || m.d.boss) continue;
+        query(S, m.x, m.y, m.r * 0.9, (o) => {
+          if (o === m || o.id < m.id || o.d.boss) return;
+          const dx = o.x - m.x, dy = o.y - m.y, d = Math.hypot(dx, dy) || 0.01, ov = (m.r + o.r) * 0.8 - d; if (ov <= 0) return;
+          const k = ov * 0.5, nx = dx / d, ny = dy / d; m.x -= nx * k; m.y -= ny * k; o.x += nx * k; o.y += ny * k;
+        });
+      }
+      return;
+    }
     for (const m of S.mons) {
       if (m.dead || m.d.boss) continue;
       query(S, m.x, m.y, m.r * 0.9, (o) => {
@@ -512,7 +664,7 @@
   function kill(S, m) {
     m.dead = true; S.kills++;
     S.ev.push({ k: 'die', x: m.x, y: m.y, t: m.k, r: m.r });
-    const fy = m.d.fly ? floorY(Math.max(0, Math.min(S.F - 1, Math.floor(-(m.y - 20) / FH)))) : floorY(m.f);
+    const fy = S.flat ? m.y + 14 : (m.d.fly ? floorY(Math.max(0, Math.min(S.F - 1, Math.floor(-(m.y - 20) / FH)))) : floorY(m.f));
     const n = m.d.xp;
     for (let i = 0; i < Math.min(n, 8); i++) S.gems.push({ x: m.x + (S.rng() - 0.5) * m.r, y: m.y, vy: -200 - S.rng() * 150, vx: (S.rng() - 0.5) * 120, fy, v: n > 8 && i === 0 ? n - 7 : 1, pull: false, big: m.d.boss });
     if (S.rng() < 0.009) S.gems.push({ x: m.x, y: m.y, vy: -250, vx: 0, fy, heart: true, pull: false });
@@ -531,7 +683,8 @@
     stepHelper(S, dt);
     stepJob(S, dt);
     stepNurse(S, dt);
-    stepHua(S, dt);
+    stepWk(S, dt);
+    stepHrp(S, dt);
     // 粉筆連發：朝最近的怪丟（優先同一層）
     if ((v = sv(S, 'candy')) && timer(S, 'candy', v.cd, dt)) {
       const sameF = (m) => Math.abs(m.y - cy) < 200;
@@ -606,7 +759,7 @@
         d.cd -= dt;
         if (d.cd <= 0) {
           const c = cluster(S, cx, cy, 480, v.r);
-          if (c) { d.st = 'out'; d.t = 0; d.x0 = d.x; d.y0 = d.y; d.tx = c.x; d.ty = c.d.fly ? c.y : floorY(c.f) - 26; } else d.cd = 0.4;
+          if (c) { d.st = 'out'; d.t = 0; d.x0 = d.x; d.y0 = d.y; d.tx = c.x; d.ty = S.flat || c.d.fly ? c.y : floorY(c.f) - 26; } else d.cd = 0.4;
         }
       } else if (d.st === 'out') {
         const k = Math.min(1, d.t / 0.45);
@@ -657,14 +810,14 @@
     S.waves.forEach((w) => (w.t += dt)); S.waves = S.waves.filter((w) => w.t < w.dur);
     // 圖釘：撒在地上，踩到的地上怪每 0.5 秒痛一下
     if ((v = sv(S, 'tack')) && timer(S, 'tack', v.cd, dt)) {
-      for (let i = 0; i < v.n; i++) S.tacks.push({ x: Math.max(20, Math.min(S.Wt - 20, p.x + (S.rng() - 0.5) * 260)), y: floorY(p.f), f: p.f, t: 0, dur: v.dur, dmg: v.dmg, cd: 0, rot: S.rng() * 6 });
+      for (let i = 0; i < v.n; i++) S.tacks.push({ x: Math.max(20, Math.min(S.Wt - 20, p.x + (S.rng() - 0.5) * 260)), y: S.flat ? p.y + (S.rng() - 0.5) * 200 : floorY(p.f), f: p.f, t: 0, dur: v.dur, dmg: v.dmg, cd: 0, rot: S.rng() * 6 });
       if (S.tacks.length > 60) S.tacks.splice(0, S.tacks.length - 60);
     }
     for (const tk of S.tacks) {
       tk.t += dt; tk.cd -= dt;
       if (tk.cd > 0) continue;
       let hit = false;
-      query(S, tk.x, tk.y - 20, 18, (m) => { if (!m.d.fly && !m.cl && m.f === tk.f) { hurt(S, m, tk.dmg, 'tack'); hit = true; } });
+      query(S, tk.x, S.flat ? tk.y : tk.y - 20, 18, (m) => { if (!m.d.fly && !m.cl && m.f === tk.f) { hurt(S, m, tk.dmg, 'tack'); hit = true; } });
       if (hit) tk.cd = 0.5;
     }
     S.tacks = S.tacks.filter((tk) => tk.t < tk.dur);
@@ -706,7 +859,7 @@
     }
     for (const pl of S.pools) {
       pl.t += dt;
-      query(S, pl.x, pl.y - 30, pl.r, (m) => { if (Math.abs(m.y + m.r - pl.y) < 70 || m.d.fly) { hurt(S, m, pl.dps * dt, 'brew', true); m.slow = Math.max(m.slow, 0.2); } });
+      query(S, pl.x, S.flat ? pl.y : pl.y - 30, pl.r, (m) => { if (S.flat || Math.abs(m.y + m.r - pl.y) < 70 || m.d.fly) { hurt(S, m, pl.dps * dt, 'brew', true); m.slow = Math.max(m.slow, 0.2); } });
     }
     S.pools = S.pools.filter((pl) => pl.t < pl.dur);
     // 飛行物
@@ -753,12 +906,13 @@
       h.left -= dt;
       if (followLadder(S, h, dt)) { h.moving = 0; return; }
       if (h.f !== pf && p.lad == null) { h.lost = (h.lost || 0) + dt; if (h.lost > 0.4) { h.lost = 0; h.f = p.f; h.x = p.x - p.face * 90; S.ev.push({ k: 'heroIn', x: h.x, y: floorY(h.f) }); } }
-      h.y = floorY(h.f);
-      const tx = Math.max(30, Math.min(S.Wt - 30, p.x - p.face * 90)), dx = tx - h.x;
+      if (!S.flat) h.y = floorY(h.f);
+      const tx = S.flat ? h.x : Math.max(30, Math.min(S.Wt - 30, p.x - p.face * 90)), dx = tx - h.x;
       if (Math.abs(dx) > 650) h.x = tx;
       const st = Math.abs(dx) > 40 ? Math.sign(dx) * Math.min(460, Math.max(170, Math.abs(dx) * 3)) : 0;
       h.x += st * dt; h.moving = Math.abs(st);
       h.face = Math.abs(dx) > 40 ? Math.sign(dx) : (p.x > h.x ? 1 : -1);
+      if (S.flat) flatFollow(S, h, dt);
       if (h.left <= 0) { h.ph = 'tf'; h.t = 0; S.ev.push({ k: 'heroTf', x: h.x, y: h.y - 60 }); }
     } else if (h.ph === 'tf') {
       if (h.t >= HELP.tf) { h.ph = 'fight'; h.t = 0; h.left = HELP.fight; h.vx = h.vy = 0; }
@@ -774,7 +928,7 @@
       h.moving = Math.hypot(h.vx, h.vy);
       if (Math.abs(h.vx) > 30) h.face = h.vx > 0 ? 1 : -1;
       h.hitT -= dt;
-      if (h.hitT <= 0) { h.hitT = 0.25; query(S, h.x, h.y - 55, v.r, (m) => { hurt(S, m, v.dmg, 'hero'); m.x += Math.sign(m.x - h.x) * 14; }); }
+      if (h.hitT <= 0) { h.hitT = 0.25; query(S, h.x, h.y - 55, v.r, (m) => { hurt(S, m, v.dmg * pm(S), 'hero'); m.x += Math.sign(m.x - h.x) * 14; }); }
       if (h.left <= 0) {   // 變回校長：落在小編旁邊
         h.ph = 'back'; h.t = 0; h.ouch = true; h.f = pf; h.x = Math.max(30, Math.min(S.Wt - 30, p.x - p.face * 90)); h.y = floorY(h.f);
         S.ev.push({ k: 'heroBack', x: h.x, y: h.y - 60 });
@@ -812,7 +966,7 @@
     for (const it of S.items) {
       if (it.got) continue;
       // 站在旁邊翻找 2 秒才拿得到
-      if (Math.abs(it.x - p.x) < D.PLAYER.pick && Math.abs(it.y - 30 - cy) < 90) {
+      if (S.flat ? Math.hypot(it.x - p.x, it.y - p.y) < D.PLAYER.pick + 40 : (Math.abs(it.x - p.x) < D.PLAYER.pick && Math.abs(it.y - 30 - cy) < 90)) {
         if (it.prog === 0) S.ev.push({ k: 'search', it });
         it.prog += dt;
         if (it.prog >= D.PLAYER.search) {
@@ -823,11 +977,11 @@
     }
     for (const c of S.chests) {
       if (c.open) continue;
-      if (Math.abs(c.x - p.x) < D.PLAYER.pick && Math.abs(c.y - 30 - cy) < 90) { c.open = true; S.chestPick++; S.ev.push({ k: 'chest', c }); }
+      if (S.flat ? Math.hypot(c.x - p.x, c.y - p.y) < D.PLAYER.pick + 30 : (Math.abs(c.x - p.x) < D.PLAYER.pick && Math.abs(c.y - 30 - cy) < 90)) { c.open = true; S.chestPick++; S.ev.push({ k: 'chest', c }); }
     }
     // 撤離：走進撤離點那間教室，撐完倒數（老師開門）
     const ex = S.exit;
-    ex.inRoom = p.lad == null && p.f === ex.f && Math.floor(p.x / W) === Math.floor(ex.x / W);
+    ex.inRoom = S.flat ? Math.hypot(p.x - ex.x, p.y - ex.y) < 200 : (p.lad == null && p.f === ex.f && Math.floor(p.x / W) === Math.floor(ex.x / W));
     if (ex.open && ex.inRoom) {
       if (ex.left === ex.wait && ex.wait > 0) S.ev.push({ k: 'waitStart' });
       ex.left -= dt;
@@ -840,7 +994,8 @@
       // 魔王：頂樓（南瓜大王）或守在撤離點（床單鬼王），打倒才能撤離
       const d = D.MONS[B.k];
       let f, x, y;
-      if (B.at === 'chase') { f = pFloor(S); x = S.p.x < S.Wt / 2 ? Math.min(S.Wt - 120, S.p.x + 330) : Math.max(120, S.p.x - 330); y = floorY(f) - d.r; }   // 拿齊寶物後，Boss 出現在主角所在的這層樓（面對面對話），之後一路追著主角，直到被打倒
+      if (S.flat) { f = 0; const q = flatFree(S, S.p.x + (S.p.x < S.Wt / 2 ? 330 : -330), S.p.y, d.r * 0.7); x = q.x; y = q.y; }
+      else if (B.at === 'chase') { f = pFloor(S); x = S.p.x < S.Wt / 2 ? Math.min(S.Wt - 120, S.p.x + 330) : Math.max(120, S.p.x - 330); y = floorY(f) - d.r; }   // 拿齊寶物後，Boss 出現在主角所在的這層樓（面對面對話），之後一路追著主角，直到被打倒
       else if (B.at === 'exit') { f = S.exit.f; x = S.exit.x; y = floorY(f) - 170; }
       else { f = S.F - 1; x = S.p.f === f ? (S.p.x < S.Wt / 2 ? S.Wt - 120 : 120) : S.Wt / 2; y = floorY(f) - d.r; }
       S.boss = spawn(S, B.k, x, y, f); S.boss.spawnShield = 3.5; S.boss.face = S.p.x >= S.boss.x ? 1 : -1;   // 登場後 3.5 秒無敵，讓玩家看到 Boss 現身
@@ -856,8 +1011,7 @@
   function gainXp(S, n) {
     const p = S.p;
     p.xp += n * (sv(S, 'magnet')?.m ?? 1);
-    while (p.xp >= p.need) { p.xp -= p.need; p.lv++; p.need = need(S, p.lv); S.pending++; S.ev.push({ k: 'lvup' }); }
-    while (S.promoDone < D.PROMO_LV.length && p.lv >= D.PROMO_LV[S.promoDone]) { S.promoDone++; S.promoPend++; }   // Lv5／10／15 各一次晉升
+    while (p.xp >= p.need) { p.xp -= p.need; p.lv++; p.need = need(S, p.lv); S.promoPend++; S.ev.push({ k: 'lvup' }); }   // 每次升級都是「晉升選單」（晉升自己／增加夥伴／晉升夥伴／換夥伴），不再選物品；物品要開福袋寶箱
   }
 
   // ---------- 升級三選一 ----------
@@ -872,6 +1026,7 @@
       const sk = D.SKILLS[k], own = !!S.sk[k];
       let w = (own ? 1.6 : 1) * (sk.kind === 'w' ? 1.15 : 0.85) * (sk.rare ? D.RARE[sk.rare].w : 1);
       if (k === 'bento' && S.p.hp < S.p.max * 0.5) w *= 2.5;
+      const aff = S.job && S.job.id && D.JOB_AFF[S.job.id]; if (aff) w *= aff.includes(k) ? 3.2 : 0.5;   // 符合職業人設的道具比較常出現
       if (full && sk.kind === 'w' && !own) w *= 0.45;   // 帶滿了：新武器少出現一點
       return { k, w };
     });
@@ -912,35 +1067,40 @@
 
   // ---------- 職業晉升 ----------
   // 選項：繼續晉升（同職業升一階）、轉職（新職業的階級＝目前階級－1，最低 1 階）；第一次沒有職業，直接選
+  // 晉升時一次選一個：晉升自己、增加夥伴（還沒有夥伴時）、晉升夥伴、換夥伴
   function makePromoOffer(S) {
-    const cur = S.job, out = [];
-    if (cur.id && cur.tier < 3) out.push({ job: cur.id, tier: cur.tier + 1, kind: 'up' });
-    else if (cur.id) out.push({ job: cur.id, tier: 3, kind: 'max' });   // 已經最高階：維持並補血
-    for (const id of Object.keys(D.JOBS)) {
-      if (id === cur.id) continue;
-      out.push({ job: id, tier: cur.id ? Math.max(1, cur.tier - 1) : 1, kind: cur.id ? 'switch' : 'pick', ready: D.JOBS[id].ready });
-    }
-    for (const o of out) if (o.ready === undefined) o.ready = D.JOBS[o.job].ready;
+    const cur = S.job, pt = S.partners[0], out = [];
+    if (!cur.id) out.push({ kind: 'job' });   // 還沒有職階：第一次晉升可以選職業
+    else if (cur.tier < 3) out.push({ kind: 'up', job: cur.id, tier: cur.tier + 1 });
+    if (!pt) out.push({ kind: 'add' });
+    else { if ((pt.tier || 1) < 3) out.push({ kind: 'pup', k: pt.k, tier: (pt.tier || 1) + 1 }); out.push({ kind: 'swap' }); }
+    if (cur.id && cur.tier >= 3) out.push({ kind: 'boost' });   // 自己已升滿：改成「強化自己」（血量、攻擊、跑速，可一直疊）
+    if (pt && (pt.tier || 1) >= 3) out.push({ kind: 'pboost', k: pt.k });   // 夥伴已升滿：「強化夥伴」（夥伴的傷害、治療、效果 +20%，可一直疊）
     return out;
   }
-  function choosePromo(S, i) {
-    const o = S.promoOffer && S.promoOffer[i]; if (!o || !o.ready) return false;
-    S.job = { id: o.job, tier: o.tier };
-    if (S.partners.some((x) => x.k === 'zhang')) S.sk.hero = Math.min(D.MAXLV, 1 + o.tier);
-    S.p.max += 20; S.p.hp = S.p.max;   // 晉升加血量上限並補滿
-    const idx = S.promoDone - S.promoPend;   // 這是第幾次晉升（0、1、2）
-    S.promoPend--; S.promoOffer = null; S.state = 'play'; S.sawHit.clear(); S.traps = []; S.turrets = []; S.turretT = undefined; S.raiseT = 0;
-    // 每次晉升都可以選：還沒帶的夥伴，或是「強化自己」
-    S.partnerOffer = buildPartnerOffer(S); S.state = 'partner'; S.ev.push({ k: 'partnerPick' });
-    S.ev.push({ k: 'promoted', job: o.job, tier: o.tier });
-    return true;
+  const syncHero = (S) => { const z = S.partners.find((x) => x.k === 'zhang'); if (z) S.sk.hero = Math.min(D.MAXLV, 1 + (z.tier || 1)); };
+  const endPromo = (S, extra) => { S.promoPend--; S.promoOffer = null; S.partnerOffer = null; S.state = 'play'; syncHero(S); S.ev.push({ k: 'promoted', ...extra }); };
+  // kind: up｜pup｜add（arg＝夥伴代號）｜swap（arg＝新夥伴代號）
+  function choosePromo(S, kind, arg) {
+    if (kind === 'job') { const J = D.JOBS[arg]; if (S.job.id || !J || !J.ready) return false; S.job = { id: arg, tier: 1 }; S.p.max += 20; S.p.hp = S.p.max; endPromo(S, { job: arg, tier: 1 }); return true; }
+    if (kind === 'up') { if (S.job.tier >= 3) return false; S.job.tier++; S.p.max += 20; S.p.hp = S.p.max; S.sawHit.clear(); endPromo(S, { job: S.job.id, tier: S.job.tier }); return true; }
+    if (kind === 'boost') { S.selfLv = (S.selfLv || 0) + 1; S.p.max += 30; S.p.hp = S.p.max; endPromo(S, { boost: S.selfLv }); return true; }
+    if (kind === 'pboost') { const pt = S.partners[0]; if (!pt || (pt.tier || 1) < 3) return false; S.pBoost = (S.pBoost || 0) + 1; endPromo(S, { pboost: S.pBoost, partner: pt.k }); return true; }
+    if (kind === 'pup') { const pt = S.partners[0]; if (!pt || (pt.tier || 1) >= 3) return false; pt.tier = (pt.tier || 1) + 1; endPromo(S, { partner: pt.k, tier: pt.tier }); return true; }
+    if (kind === 'add') { if (S.partners.length || !D.PARTNERS[arg]) return false; S.partners.push({ k: arg, tier: 1 }); endPromo(S, { partner: arg, tier: 1 }); return true; }
+    if (kind === 'swap') {
+      const old = S.partners[0]; if (!old || !D.PARTNERS[arg] || arg === old.k) return false;
+      dropPartner(S, old.k); S.pBoost = 0; S.partners.push({ k: arg, tier: 1 }); S.ev.push({ k: 'partnerLeave', who: old.k, to: arg }); endPromo(S, { partner: arg, tier: 1 }); return true;
+    }
+    return false;
   }
   // 夥伴離開時清掉牠的狀態
   function dropPartner(S, who) {
     S.partners = S.partners.filter((x) => x.k !== who);
     if (who === 'zhang') { delete S.sk.hero; delete S.tm.hero; S.helper = null; }
     if (who === 'tu') S.nurse = null;
-    if (who === 'hua') S.hua = null;
+    if (who === 'wk') { S.wk = null; S.pTurrets = []; }
+    if (who === 'hr') S.hrp = null;
   }
   // 夥伴／強化自己的選項：還沒帶的夥伴（已有夥伴就是「換」）＋強化自己
   function buildPartnerOffer(S) {
@@ -963,8 +1123,22 @@
     return true;
   }
   // 主角在梯子上：夥伴也爬上／爬下梯子，跟在主角下方；回傳 true 表示正在爬
+  // 平面：夥伴跟在主角旁邊（太遠就直接瞬移）
+  function flatFollow(S, h, dt) {
+    const p = S.p, sx = (h.side || (h.side = (S.rng() < 0.5 ? -1 : 1)));
+    const tx = p.x - p.face * 90 + sx * 20, ty = p.y + 24 + sx * 18, dx = tx - h.x, dy = ty - h.y, d = Math.hypot(dx, dy);
+    h.f = 0; h.climbing = false; h.lost = 0;
+    if (d > 700) { const q = flatFree(S, tx, ty, 20); h.x = q.x; h.y = q.y; return; }
+    const st = d > 40 ? Math.min(460, Math.max(170, d * 3)) : 0;
+    const ox = h.x, oy = h.y;
+    if (d > 1) { flatMove(S, h, dx / d * st * dt, dy / d * st * dt, 18); if (flatBlocked(S, h.x, h.y, 18)) { const q = flatFree(S, h.x, h.y, 18); h.x = q.x; h.y = q.y; } }
+    // 被機台卡住（想走卻沒前進）超過 0.5 秒：直接移到主角身邊
+    if (d > 90 && st > 0 && Math.hypot(h.x - ox, h.y - oy) < st * dt * 0.35) { h.stuckT = (h.stuckT || 0) + dt; if (h.stuckT > 0.5) { h.stuckT = 0; const q = flatFree(S, tx, ty, 20); h.x = q.x; h.y = q.y; S.ev.push({ k: 'nurseWarp', x: h.x, y: h.y - 50 }); } } else h.stuckT = 0;
+    h.moving = st; h.face = d > 40 ? Math.sign(dx) || 1 : (p.x > h.x ? 1 : -1);
+  }
   function followLadder(S, h, dt) {
     const p = S.p;
+    if (S.flat) { h.climbing = false; return false; }
     if (p.lad == null) { h.climbing = false; return false; }
     const l = S.ladders[p.lad], lo = floorY(l.f), hi = floorY(l.f + 1);
     h.climbing = true; h.moving = 0; h.f = p.y < (lo + hi) / 2 ? l.f + 1 : l.f;
@@ -974,26 +1148,56 @@
     h.face = 1; h.lost = 0;
     return true;
   }
-  // 小花（現場女工人）：跟在主角旁邊，朝最近的怪丟扳手
-  function stepHua(S, dt) {
-    if (!S.partners.some((x) => x.k === 'hua')) { S.hua = null; return; }
-    const p = S.p, pf = pFloor(S), tier = S.job.tier || 0;
-    let h = S.hua;
-    if (!h) { h = S.hua = { x: p.x - 90, y: p.y, f: p.f, face: 1, moving: 0, cd: 1, age: 0 }; return; }
-    h.age += dt; h.cd -= dt;
-    if (followLadder(S, h, dt)) return;
-    if (h.f !== pf && p.lad == null) { h.lost = (h.lost || 0) + dt; if (h.lost > 0.2) { h.lost = 0; h.f = p.f; h.x = p.x - p.face * 90; S.ev.push({ k: 'nurseWarp', x: h.x, y: floorY(h.f) - 50 }); } } else h.lost = 0;
-    h.y = floorY(h.f);
-    const tx = Math.max(30, Math.min(S.Wt - 30, p.x - p.face * 95)), dx = tx - h.x;
-    if (Math.abs(dx) > 650) h.x = tx;
-    const st = Math.abs(dx) > 40 ? Math.sign(dx) * Math.min(460, Math.max(170, Math.abs(dx) * 3)) : 0;
-    h.x += st * dt; h.moving = Math.abs(st);
-    h.face = Math.abs(dx) > 40 ? Math.sign(dx) : (p.x > h.x ? 1 : -1);
-    if (h.cd <= 0) {
-      const tg = nearest(S, h.x, h.y - 60, 540);
-      if (tg) { h.cd = 1.8; h.face = tg.x >= h.x ? 1 : -1; const a = Math.atan2(tg.y - (h.y - 60), tg.x - h.x); S.shots.push({ k: 'candy', x: h.x, y: h.y - 60, vx: Math.cos(a) * 760, vy: Math.sin(a) * 760, life: 0.9, dmg: 16 * (1 + 0.25 * tier), pierce: 1, hit: new Set(), rot: S.rng() * 6 }); S.ev.push({ k: 'throw' }); }
-      else h.cd = 0.3;
+  // 人資（夥伴）：跟在主角旁邊，在自己身邊放出人資招式（階級越高招式越多）
+  function stepHrp(S, dt) {
+    const pt = S.partners.find((x) => x.k === 'hr');
+    if (!pt) { S.hrp = null; return; }
+    const p = S.p, pf = pFloor(S), tier = Math.min(3, pt.tier || 1);
+    let h = S.hrp;
+    if (!h) { h = S.hrp = { x: p.x - 90, y: p.y, f: p.f, face: 1, moving: 0, age: 0 }; return; }
+    h.age += dt;
+    if (!followLadder(S, h, dt)) {
+      if (h.f !== pf && p.lad == null) { h.lost = (h.lost || 0) + dt; if (h.lost > 0.2) { h.lost = 0; h.f = p.f; h.x = p.x - p.face * 90; S.ev.push({ k: 'nurseWarp', x: h.x, y: floorY(h.f) - 50 }); } } else h.lost = 0;
+      if (!S.flat) h.y = floorY(h.f);
+      const tx = S.flat ? h.x : Math.max(30, Math.min(S.Wt - 30, p.x - p.face * 95)), dx = tx - h.x;
+      if (Math.abs(dx) > 650) h.x = tx;
+      const st = Math.abs(dx) > 40 ? Math.sign(dx) * Math.min(460, Math.max(170, Math.abs(dx) * 3)) : 0;
+      h.x += st * dt; h.moving = Math.abs(st);
+      h.face = Math.abs(dx) > 40 ? Math.sign(dx) : (p.x > h.x ? 1 : -1);
+      if (S.flat) flatFollow(S, h, dt);
     }
+    let hv = D.JOBS.hr.lv[tier]; const hm = pm(S);
+    if (hm > 1) { hv = { ...hv }; for (const k of Object.keys(hv)) { const o = hv[k]; if (o && typeof o === 'object') { const c = { ...o }; if (c.dmg) c.dmg *= hm; if (c.dps) c.dps *= hm; hv[k] = c; } } }   // 夥伴強化：人資的傷害一起加成
+    hrAbilities(S, hv, dt, h.x, S.flat ? h.y : h.y - 52, 'p_');
+  }
+  // 維修人員（夥伴）：跟在主角旁邊；每隔一陣子在身邊架一座自動砲台（階級越高，砲台越多、越痛、架得越快）
+  function stepWk(S, dt) {
+    const pt = S.partners.find((x) => x.k === 'wk');
+    if (!pt) { S.wk = null; S.pTurrets = []; return; }
+    const p = S.p, pf = pFloor(S), tier = pt.tier || 1;
+    let h = S.wk;
+    if (!h) { h = S.wk = { x: p.x - 90, y: p.y, f: p.f, face: 1, moving: 0, cd: 3, age: 0 }; return; }
+    h.age += dt; h.cd -= dt;
+    if (!followLadder(S, h, dt)) {
+      if (h.f !== pf && p.lad == null) { h.lost = (h.lost || 0) + dt; if (h.lost > 0.2) { h.lost = 0; h.f = p.f; h.x = p.x - p.face * 90; S.ev.push({ k: 'nurseWarp', x: h.x, y: floorY(h.f) - 50 }); } } else h.lost = 0;
+      if (!S.flat) h.y = floorY(h.f);
+      const tx = S.flat ? h.x : Math.max(30, Math.min(S.Wt - 30, p.x - p.face * 95)), dx = tx - h.x;
+      if (Math.abs(dx) > 650) h.x = tx;
+      const st = Math.abs(dx) > 40 ? Math.sign(dx) * Math.min(460, Math.max(170, Math.abs(dx) * 3)) : 0;
+      h.x += st * dt; h.moving = Math.abs(st);
+      h.face = Math.abs(dx) > 40 ? Math.sign(dx) : (p.x > h.x ? 1 : -1);
+      if (S.flat) flatFollow(S, h, dt);
+      if (h.cd <= 0 && S.pTurrets.length < tier) {
+        h.cd = 10 - tier * 1.5; S.pTurrets.push({ x: h.x + h.face * 50, y: h.y - 30, life: 13 + tier * 2, cd: 0.4, ang: 0, tier }); S.ev.push({ k: 'turretOn' });
+      } else if (h.cd <= 0) h.cd = 1;
+    }
+    for (const tu of S.pTurrets) {
+      tu.life -= dt; tu.cd -= dt;
+      const tg = nearest(S, tu.x, tu.y, 520);
+      if (tg) tu.ang = Math.atan2(tg.y - tu.y, tg.x - tu.x);
+      if (tg && tu.cd <= 0) { tu.cd = 0.55 - 0.08 * tier; S.shots.push({ k: 'candy', x: tu.x, y: tu.y - 8, vx: Math.cos(tu.ang) * 760, vy: Math.sin(tu.ang) * 760, life: 0.8, dmg: (12 + 6 * tier) * pm(S), pierce: 0, hit: new Set(), rot: S.rng() * 6 }); }
+    }
+    S.pTurrets = S.pTurrets.filter((tu) => tu.life > 0);
   }
   // 總務阿兔：平常跟在主角旁邊；每隔一段時間變身「護士兔」，站在主角身邊持續回血；老闆夥伴則用原本的打怪超人（S.helper）
   const NURSE = { first: 6, calm: 10, tf: 0.6, heal: 3.4, back: 0.6 };   // 變護士→連打 3 針→變回總務，隔一陣子再啟動
@@ -1011,25 +1215,26 @@
   function stepNurse(S, dt) {
     stepSyringes(S, dt);
     if (!S.partners.some((x) => x.k === 'tu')) { S.nurse = null; return; }
-    const p = S.p, pf = pFloor(S), cy = pc(S), tier = S.job.tier || 0;
+    const p = S.p, pf = pFloor(S), cy = pc(S), tier = (S.partners.find((x) => x.k === 'tu') || {}).tier || 1;
     let h = S.nurse;
     if (!h) { h = S.nurse = { ph: 'calm', t: 0, left: NURSE.first, x: p.x + 90, y: p.y, f: p.f, face: -1, moving: 0, tick: 0, age: 0 }; return; }
     h.t += dt; h.age += dt;
     if (h.ph === 'calm' && followLadder(S, h, dt)) return;   // 變身中不爬（原地等主角下來再追）
     // 跟在主角旁邊（主角換樓層就跟上去）
     if (h.f !== pf && p.lad == null) { h.lost = (h.lost || 0) + dt; if (h.lost > 0.2) { h.lost = 0; h.f = p.f; h.x = p.x + p.face * 90; S.ev.push({ k: 'nurseWarp', x: h.x, y: floorY(h.f) - 50 }); } } else h.lost = 0;
-    h.y = floorY(h.f);
-    const tx = Math.max(30, Math.min(S.Wt - 30, p.x + (h.ph === 'heal' ? p.face * 70 : p.face * 90))), dx = tx - h.x;
+    if (!S.flat) h.y = floorY(h.f);
+    const tx = S.flat ? h.x : Math.max(30, Math.min(S.Wt - 30, p.x + (h.ph === 'heal' ? p.face * 70 : p.face * 90))), dx = tx - h.x;
     if (Math.abs(dx) > 650) h.x = tx;
     const st = Math.abs(dx) > 40 ? Math.sign(dx) * Math.min(460, Math.max(170, Math.abs(dx) * 3)) : 0;
     h.x += st * dt; h.moving = Math.abs(st);
     h.face = Math.abs(dx) > 40 ? Math.sign(dx) : (p.x > h.x ? 1 : -1);
+    if (S.flat) flatFollow(S, h, dt);
     if (h.ph === 'calm') { h.left -= dt; if (h.left <= 0) { h.ph = 'tf'; h.t = 0; S.ev.push({ k: 'nurseTf', x: h.x, y: h.y - 60 }); } }
     else if (h.ph === 'tf') { if (h.t >= NURSE.tf) { h.ph = 'heal'; h.t = 0; h.left = NURSE.heal; h.tick = 0; } }
     else if (h.ph === 'heal') {
       h.left -= dt; h.tick -= dt;
       if (h.tick <= 0) {
-        h.tick = 1.0; const n = Math.max(5, Math.round((2.5 + 1.2 * tier) * 1.8 * (S.job.id === 'mt' ? 1.5 : 1)));
+        h.tick = 1.0; const n = Math.max(5, Math.round((2.5 + 1.2 * tier) * 1.8 * (S.job.id === 'mt' ? 1.5 : 1) * pm(S)));
         S.syringes.push({ x0: h.x + h.face * 14, y0: h.y - 62, t: 0, dur: 0.3, n });   // 打針：一支針筒飛向主角，到了才回血
       }
       if (h.left <= 0) { h.ph = 'back'; h.t = 0; S.ev.push({ k: 'nurseBack', x: h.x, y: h.y - 60 }); }
@@ -1062,31 +1267,32 @@
   }
 
   // 人資：公告張貼（定住）、加班單（減速＋慢慢受傷）、考績評比（標記）、面試（連續逼問）、調薪（全員攻擊提升）、請假單（把一群怪請走）
-  function stepHR(S, v, dt) {
-    const cx = S.p.x, cy = pc(S);
+  function stepHR(S, v, dt) { hrAbilities(S, v, dt, S.p.x, pc(S), 'h_'); }
+  // 人資的招式（主角當人資角色、或人資夥伴都用這組）：cx、cy 是出招的中心，pre 是計時器前綴（兩邊各自計時）
+  function hrAbilities(S, v, dt, cx, cy, pre) {
     if (S.raiseT > 0) S.raiseT -= dt;
-    if (v.notice && timer(S, 'h_notice', v.notice.cd, dt)) {
+    if (v.notice && timer(S, pre + 'notice', v.notice.cd, dt)) {
       query(S, cx, cy, v.notice.r, (m) => { hurt(S, m, v.notice.dmg, 'notice'); m.stun = Math.max(m.stun, m.d.boss ? 0.8 : v.notice.stun); });
       S.fx.push({ k: 'notice', x: cx, y: cy, r: v.notice.r, t: 0, dur: 0.6 }); S.ev.push({ k: 'say', x: cx, y: cy - 90, s: '公告張貼！' }); S.ev.push({ k: 'flash' });
     }
     if (v.overtime) {   // 加班單：身邊一圈的怪被加班，變慢又慢慢掉血
-      S.otAcc = (S.otAcc || 0) + dt;
-      query(S, cx, cy, v.overtime.r, (m) => { m.slow = Math.max(m.slow || 0, 0.3); if (S.otAcc >= 0.5) hurt(S, m, v.overtime.dps * 0.5, 'overtime', true); });
-      if (S.otAcc >= 0.5) S.otAcc = 0;
+      const ok = 'otAcc' + pre; S[ok] = (S[ok] || 0) + dt;
+      query(S, cx, cy, v.overtime.r, (m) => { m.slow = Math.max(m.slow || 0, 0.3); if (S[ok] >= 0.5) hurt(S, m, v.overtime.dps * 0.5, 'overtime', true); });
+      if (S[ok] >= 0.5) S[ok] = 0;
     }
-    if (v.review && timer(S, 'h_review', v.review.cd, dt)) {   // 考績評比：標記最耐打的幾隻
+    if (v.review && timer(S, pre + 'review', v.review.cd, dt)) {   // 考績評比：標記最耐打的幾隻
       const cand = S.mons.filter((m) => !m.dead && Math.abs(m.x - cx) < 620 && Math.abs(m.y - cy) < 560 && !(m.marked > 0)).sort((a, b) => b.hp - a.hp).slice(0, v.review.n);
       for (const m of cand) { m.marked = v.review.dur; m.markMul = v.review.mul; }
       if (cand.length) S.ev.push({ k: 'say', x: cand[0].x, y: cand[0].y - cand[0].r - 40, s: '考績：丙！' });
     }
     for (const m of S.mons) if (m.marked > 0) m.marked -= dt;
-    if (v.interview && timer(S, 'h_intv', v.interview.cd, dt)) {   // 面試：發問，逼問 3 秒（連續傷害）
+    if (v.interview && timer(S, pre + 'intv', v.interview.cd, dt)) {   // 面試：發問，逼問 3 秒（連續傷害）
       const tg = nearest(S, cx, cy, 520);
       if (tg) { tg.intv = { t: v.interview.dur, dps: v.interview.dps }; S.ev.push({ k: 'say', x: tg.x, y: tg.y - tg.r - 40, s: ['請自我介紹！', '你的缺點是？', '為什麼想來我們公司？'][(S.rng() * 3) | 0] }); }
     }
     for (const m of S.mons) if (m.intv && m.intv.t > 0) { m.intv.t -= dt; hurt(S, m, m.intv.dps * dt, 'interview', true); }
-    if (v.raise && timer(S, 'h_raise', v.raise.cd, dt)) { S.raiseT = v.raise.dur; S.raiseMul = v.raise.mul; S.ev.push({ k: 'say', x: cx, y: cy - 100, s: '調薪！攻擊提升' }); }
-    if (v.leave && timer(S, 'h_leave', v.leave.cd, dt)) {   // 請假單：把一群怪請走（暫時離開、定住 3.5 秒）
+    if (v.raise && timer(S, pre + 'raise', v.raise.cd, dt)) { S.raiseT = v.raise.dur; S.raiseMul = v.raise.mul; S.ev.push({ k: 'say', x: cx, y: cy - 100, s: '調薪！攻擊提升' }); }
+    if (v.leave && timer(S, pre + 'leave', v.leave.cd, dt)) {   // 請假單：把一群怪請走（暫時離開、定住 3.5 秒）
       let n = 0;
       query(S, cx, cy, v.leave.r, (m) => { if (n >= v.leave.n || m.d.boss) return; n++; m.stun = Math.max(m.stun, v.leave.stun); m.x += Math.sign(m.x - cx || 1) * 220; });
       if (n) { S.fx.push({ k: 'notice', x: cx, y: cy, r: v.leave.r, t: 0, dur: 0.7 }); S.ev.push({ k: 'say', x: cx, y: cy - 90, s: '請假單核准！' }); }
@@ -1094,12 +1300,12 @@
   }
   // 維修員：夾具陷阱（放在怪多的地方）、自動砲台（自己開火）、慢慢回血、砲台連線補血
   // 跨關接續：把職業、階級、夥伴、強化帶到下一關
-  function snapshotCarry(S) { return { job: { ...S.job }, partners: S.partners.map((x) => x.k), selfLv: S.selfLv || 0 }; }
+  function snapshotCarry(S) { return { job: { ...S.job }, partners: S.partners.map((x) => ({ k: x.k, tier: x.tier || 1 })), selfLv: S.selfLv || 0, pBoost: S.pBoost || 0 }; }
   function applyCarry(S, c) {
     if (!c) return;
-    S.job = { ...c.job }; S.partners = c.partners.filter((k) => D.PARTNERS[k]).map((k) => ({ k })); S.selfLv = c.selfLv || 0;
+    S.job = { ...c.job }; S.partners = c.partners.map((x) => (typeof x === 'string' ? { k: x, tier: 1 } : x)).filter((x) => D.PARTNERS[x.k]).map((x) => ({ k: x.k, tier: x.tier || 1 })); S.selfLv = c.selfLv || 0; S.pBoost = c.pBoost || 0;
     S.p.max += 20 * (S.job.tier || 0) + 30 * S.selfLv; S.p.hp = S.p.max;
-    if (S.partners.some((x) => x.k === 'zhang')) S.sk.hero = Math.min(D.MAXLV, 1 + (S.job.tier || 1));
+    syncHero(S);
   }
   function stepMaint(S, v, dt) {
     const cx = S.p.x, cy = pc(S);
@@ -1170,7 +1376,7 @@
   function serialize(S) {
     const pick = (o, ks) => { const r = {}; for (const k of ks) r[k] = o[k]; return r; };
     return {
-      v: 1, job: { ...S.job }, selfLv: S.selfLv || 0, partners: S.partners.map((x) => x.k), promoDone: S.promoDone, promoPend: S.promoPend + (S.state === 'promo' ? 0 : 0), li: S.li, hard: S.hard, t: S.t, rs: S.rs, p: { ...S.p }, sk: { ...S.sk }, tm: { ...S.tm },
+      v: 1, job: { ...S.job }, selfLv: S.selfLv || 0, pBoost: S.pBoost || 0, partners: S.partners.map((x) => ({ k: x.k, tier: x.tier || 1 })), promoDone: S.promoDone, promoPend: S.promoPend + (S.state === 'promo' ? 0 : 0), li: S.li, hard: S.hard, t: S.t, rs: S.rs, p: { ...S.p }, sk: { ...S.sk }, tm: { ...S.tm },
       items: S.items.map((i) => [i.got, i.prog]), chests: S.chests.map((c) => c.open), exit: pick(S.exit, ['open', 'left']),
       mons: S.mons.filter((m) => !m.dead).map((m) => pick(m, MKEYS)), boss: S.boss ? S.boss.id : null,
       gems: S.gems.slice(-150).map((g) => pick(g, ['x', 'y', 'fy', 'v', 'heart', 'big'])),
@@ -1183,8 +1389,8 @@
     const S = create(o.li, { seed: 1, ...opt, hard: !!o.hard });
     Object.assign(S, { t: o.t, rs: o.rs, sk: o.sk, tm: o.tm, pending: o.pending, chestPick: o.chestPick, spawnAcc: o.spawnAcc, hordeT: o.hordeT, kills: o.kills, nid: o.nid, heroSeen: o.heroSeen });
     Object.assign(S.p, o.p);
-    S.partners = (o.partners || []).filter((k) => D.PARTNERS[k]).map((k) => ({ k }));
-    S.selfLv = o.selfLv || 0; S.job = o.job || { id: null, tier: 0 }; S.promoDone = o.promoDone || 0; S.promoPend = o.promoPend || 0;
+    S.partners = (o.partners || []).map((x) => (typeof x === 'string' ? { k: x, tier: 1 } : x)).filter((x) => D.PARTNERS[x.k]).map((x) => ({ k: x.k, tier: x.tier || 1 }));
+    S.selfLv = o.selfLv || 0; S.pBoost = o.pBoost || 0; S.job = o.job || { id: null, tier: 0 }; S.promoDone = o.promoDone || 0; S.promoPend = o.promoPend || 0;
     o.items.forEach(([got, prog], i) => { S.items[i].got = got; S.items[i].prog = prog; });
     o.chests.forEach((open, i) => { S.chests[i].open = open; });
     Object.assign(S.exit, o.exit);
@@ -1196,5 +1402,5 @@
     return S;
   }
 
-  G.CORE = { create, step, choose, choosePromo, chooseStartJob, choosePartner, buildPartnerOffer, dropPartner, snapshotCarry, applyCarry, makePromoOffer, needDrop, weapons, makeOffer, serialize, restore, floorY, pc, pFloor, sv, onScreen, updCam, ROOM: D.ROOM };
+  G.CORE = { create, step, choose, choosePromo, chooseStartJob, dropPartner, snapshotCarry, applyCarry, makePromoOffer, needDrop, weapons, makeOffer, serialize, restore, floorY, pc, pFloor, sv, onScreen, updCam, ROOM: D.ROOM };
 })(typeof window !== 'undefined' ? window : globalThis);
